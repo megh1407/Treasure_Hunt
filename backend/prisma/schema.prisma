@@ -1,0 +1,87 @@
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum CharacterGender {
+  MALE
+  FEMALE
+}
+
+enum PlayerStatus {
+  NOT_STARTED
+  SEARCHING
+  SOLVING
+  COMPLETED
+  PAUSED
+}
+
+enum LevelStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+}
+
+model Player {
+  id                String          @id @default(cuid())
+  playerName        String
+  enrollmentNumber  String          @unique
+  team              String
+  email             String?         @unique
+  contactNumber     String?
+  branch            String?
+  selectedCharacter CharacterGender @default(MALE)
+  status            PlayerStatus    @default(NOT_STARTED)
+  currentLevel      Int             @default(1)
+  score             Int             @default(0)
+  penaltySeconds    Int             @default(0)
+  gameTimeSeconds   Int             @default(0)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  sessions      GameSession[]
+  levelProgress LevelProgress[]
+
+  @@index([enrollmentNumber])
+}
+
+model GameSession {
+  id        String    @id @default(cuid())
+  playerId  String
+  player    Player    @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  startedAt DateTime  @default(now())
+  endedAt   DateTime?
+  isActive           Boolean       @default(true)
+  isPaused           Boolean       @default(false)
+  pausedAt           DateTime?
+  totalPausedSeconds Int           @default(0)
+  statusBeforePause  PlayerStatus?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  @@index([playerId])
+}
+
+model LevelProgress {
+  id             String      @id @default(cuid())
+  playerId       String
+  player         Player      @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  levelId        Int
+  status         LevelStatus @default(NOT_STARTED)
+  score          Int         @default(0)
+  penaltySeconds Int         @default(0)
+  startedAt      DateTime?
+  completedAt    DateTime?
+  updatedAt      DateTime    @updatedAt
+  progressData   Json?       @default("{}")
+
+  @@unique([playerId, levelId])
+  @@index([playerId])
+  @@index([levelId])
+}

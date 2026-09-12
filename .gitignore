@@ -14,7 +14,19 @@ dist-ssr
 .vinxi
 .tanstack/**
 .nitro
+coverage
+*.tsbuildinfo
+*.tgz
+*.tmp
+*.temp
+*.bak
+*.swp
 *.local
+.env
+.env.local
+*.env
+.env.*
+!.env.example
 
 # Wrangler / Cloudflare
 .wrangler/
@@ -25,8 +37,24 @@ dist-ssr
 !.vscode/extensions.json
 .idea
 .DS_Store
+Thumbs.db
+desktop.ini
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
+
+# Local databases and runtime data
+*.sqlite
+*.sqlite3
+*.db
+*.pid
+
+# Test and tool output
+playwright-report/
+test-results/
+.eslintcache
+.cache/
+tmp/
+temp/
