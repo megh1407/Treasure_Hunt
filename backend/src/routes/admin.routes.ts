@@ -6,6 +6,8 @@ import {
   getAdminLeaderboard,
   deletePlayer,
   searchPlayers,
+  getQuestionBankDiagnostics,
+  exportContestantsExcel,
 } from "../controllers/admin.controller";
 import { requireAdminAuth } from "../middleware/admin.middleware";
 
@@ -19,6 +21,8 @@ router.post("/logout", adminLogout);
 router.get("/stats", requireAdminAuth, getAdminStats);
 router.get("/leaderboard", requireAdminAuth, getAdminLeaderboard);
 router.get("/search", requireAdminAuth, searchPlayers);
+router.get("/questions/diagnostics", requireAdminAuth, getQuestionBankDiagnostics);
+router.get("/export/excel", requireAdminAuth, exportContestantsExcel);
 router.delete("/players/:id", requireAdminAuth, deletePlayer);
 
 export default router;

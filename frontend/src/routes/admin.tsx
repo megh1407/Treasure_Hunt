@@ -1,8 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { Search, X } from "lucide-react";
+import { Search, X, FileDown } from "lucide-react";
 import { api } from "@/services/gameApi";
 import { formatTime } from "@/game/config";
+import { DevelopedBy } from "@/components/DevelopedBy";
 import type { AdminStats, AdminLeaderboardEntry } from "@/services/types";
 
 const title = "Admin Control Room — Core Quest Finder";
@@ -44,6 +45,9 @@ function AdminPage() {
   const [playerToDelete, setPlayerToDelete] = useState<AdminLeaderboardEntry | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   const filteredLeaderboard = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -137,13 +141,26 @@ function AdminPage() {
     }
   };
 
+  const handleDownloadExcel = async () => {
+    if (!token || isExporting) return;
+    setIsExporting(true);
+    setExportError(null);
+    try {
+      await api.downloadAdminExcel(token);
+    } catch {
+      setExportError("Unable to download contestant data. Please try again.");
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   // --- Render Login Gate if unauthenticated or before client hydration ---
   if (!token || !isMounted) {
     return (
       <main className="holo-grid min-h-dvh flex items-center justify-center bg-background px-4 py-12">
         <div className="holo-panel w-full max-w-md rounded-2xl p-8 border border-primary/30 shadow-2xl">
           <div className="text-center">
-            <p className="font-display text-[11px] tracking-[0.4em] text-primary">ORGANIZERS ONLY</p>
+            <p className="font-display text-[11px] tracking-[0.4em] text-primary">UPDATES 2K26 · ORGANIZERS ONLY</p>
             <h1 className="mt-2 font-display text-2xl tracking-wider text-foreground text-glow">
               ADMIN CONTROL ROOM
             </h1>
@@ -202,7 +219,7 @@ function AdminPage() {
           <div>
             <div className="flex items-center gap-2">
               <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-              <p className="font-display text-[10px] tracking-[0.4em] text-primary">CORE QUEST FINDER</p>
+              <p className="font-display text-[10px] tracking-[0.4em] text-primary">UPDATES 2K26</p>
             </div>
             <h1 className="mt-1 text-2xl sm:text-3xl text-foreground font-display tracking-wider text-glow">
               ORGANIZER CONTROL ROOM
@@ -232,6 +249,15 @@ function AdminPage() {
         {dataError && (
           <div className="mt-6 rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-xs text-destructive">
             {dataError}
+          </div>
+        )}
+
+        {exportError && (
+          <div className="mt-6 rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-xs text-destructive flex items-center justify-between">
+            <span>{exportError}</span>
+            <button onClick={() => setExportError(null)} className="text-destructive font-bold text-xs">
+              ✕
+            </button>
           </div>
         )}
 
@@ -284,7 +310,7 @@ function AdminPage() {
             </span>
           </div>
 
-          {/* Search Toolbar */}
+          {/* Search & Action Toolbar */}
           <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
             <div className="relative flex-1 max-w-md">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
@@ -308,11 +334,26 @@ function AdminPage() {
                 </button>
               )}
             </div>
-            {searchQuery.trim() && (
-              <span className="font-mono text-xs text-primary/80">
-                Found {filteredLeaderboard.length} of {leaderboard.length} operatives
-              </span>
-            )}
+
+            <div className="flex items-center gap-3">
+              {searchQuery.trim() && (
+                <span className="font-mono text-xs text-primary/80">
+                  Found {filteredLeaderboard.length} of {leaderboard.length} operatives
+                </span>
+              )}
+
+              <button
+                type="button"
+                id="admin-download-excel-btn"
+                onClick={handleDownloadExcel}
+                disabled={isExporting}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-primary/40 bg-primary/10 px-3.5 py-2 text-xs font-display tracking-wider text-primary hover:bg-primary/20 hover:border-primary transition-all disabled:opacity-50"
+                title="Download authoritative contestant report as Excel spreadsheet"
+              >
+                <FileDown className="h-3.5 w-3.5" />
+                <span>{isExporting ? "Preparing Excel…" : "Download Excel"}</span>
+              </button>
+            </div>
           </div>
 
           <div className="overflow-x-auto">
@@ -410,6 +451,11 @@ function AdminPage() {
             </table>
           </div>
         </section>
+
+        {/* Organizer Control Room Footer / Developer Credits */}
+        <div className="mt-8 mb-4">
+          <DevelopedBy variant="compact" />
+        </div>
       </div>
 
       {/* Confirmation Modal for Player Deletion */}

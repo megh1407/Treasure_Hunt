@@ -54,7 +54,7 @@ export const LEVELS: Level[] = [
     name: "The Silent Archive",
     building: "library",
     room: "reading_hall",
-    objective: "Search the Library for the first encrypted trace.",
+    objective: "Follow the initial clue to locate the first encrypted trace.",
     playable: true,
     rewardItem: "usb_drive",
     clue: {
@@ -172,7 +172,7 @@ export const LEVELS: Level[] = [
         position: [-7.4, 0, 5.5],
         rotationY: Math.PI / 2,
         radius: 2.4,
-        message: "TECHFEST schedule, a lost-ID notice, and a torn poster.",
+        message: "Updates 2K26 schedule, a lost-ID notice, and a torn poster.",
       },
       {
         id: "lib_box",
@@ -1061,7 +1061,7 @@ export const LEVELS: Level[] = [
     name: "CORE-X",
     building: "secret_room",
     room: "vault",
-    objective: "Breach the Innovation Vault and recover the CORE-X prototype.",
+    objective: "Follow the master sequence to breach containment and recover the CORE-X prototype.",
     playable: true,
     rewardItem: "core_x_prototype",
     clue: {

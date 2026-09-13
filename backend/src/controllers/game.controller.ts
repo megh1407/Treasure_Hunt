@@ -2,6 +2,8 @@ import { Request, Response, NextFunction } from "express";
 import { prisma } from "../lib/prisma";
 import { getServerLevelConfig, isObjectInLevel, getDecoyInLevel } from "../config/levels";
 import { normalizeProgressData } from "../lib/progress";
+import { getQuestionById, selectQuestionForPlayer, isAnswerCorrect } from "../config/questionBank";
+import { getNextClueForCompletedLevel, getDefaultClueForLevel } from "../config/clueBank";
 import type {
   ApiResponse,
   InvestigateDTO,
@@ -156,22 +158,77 @@ export async function investigateObject(
 
     // 8. Check if object is the clue target
     if (trimmedObjectId === levelConfig.targetObjectId) {
-      const investigatedObjects = Array.from(
-        new Set([...currentData.investigatedObjects, trimmedObjectId])
-      );
-      const collectedItems = levelConfig.grantedItem
-        ? Array.from(new Set([...currentData.collectedItems, levelConfig.grantedItem]))
-        : currentData.collectedItems;
+      // Execute question assignment and progress update atomically inside a transaction
+      const assignedQuestion = await prisma.$transaction(async (tx) => {
+        // 1. Re-read the latest level progress for this player inside the transaction
+        const latestProgress = await tx.levelProgress.findUnique({
+          where: {
+            playerId_levelId: {
+              playerId: trimmedPlayerId,
+              levelId: currentLevel,
+            },
+          },
+        });
 
-      const updatedData = {
-        ...currentData,
-        investigatedObjects,
-        collectedItems,
-      };
+        const progressData = normalizeProgressData(latestProgress?.progressData);
+        const progressStartedAt = latestProgress?.startedAt ?? new Date();
 
-      // Atomically update LevelProgress and set Player status to SOLVING
-      await prisma.$transaction([
-        prisma.levelProgress.upsert({
+        const investigatedObjects = Array.from(
+          new Set([...progressData.investigatedObjects, trimmedObjectId])
+        );
+        const collectedItems = levelConfig.grantedItem
+          ? Array.from(new Set([...progressData.collectedItems, levelConfig.grantedItem]))
+          : progressData.collectedItems;
+
+        // 2. If the player already has an assigned question for this level, preserve it
+        let selectedQ = progressData.assignedQuestionId
+          ? getQuestionById(progressData.assignedQuestionId)
+          : null;
+
+        // 3. If no question assigned yet, find questions currently assigned to other active players at this level
+        if (!selectedQ) {
+          const otherActiveProgress = await tx.levelProgress.findMany({
+            where: {
+              levelId: currentLevel,
+              status: "IN_PROGRESS",
+              playerId: { not: trimmedPlayerId },
+              player: {
+                status: { not: "COMPLETED" },
+                sessions: {
+                  some: { isActive: true },
+                },
+              },
+            },
+            select: {
+              progressData: true,
+            },
+          });
+
+          const occupiedIds = new Set<string>();
+          for (const item of otherActiveProgress) {
+            const data = normalizeProgressData(item.progressData);
+            if (data.assignedQuestionId) {
+              occupiedIds.add(data.assignedQuestionId);
+            }
+          }
+
+          // Select question preferring questions not currently assigned to another active player.
+          // If all questions are occupied, selectQuestionForPlayer safely falls back to the full pool.
+          selectedQ = selectQuestionForPlayer(currentLevel, occupiedIds);
+        }
+
+        const activeClue = progressData.activeClue || getDefaultClueForLevel(currentLevel);
+
+        const updatedData = {
+          ...progressData,
+          investigatedObjects,
+          collectedItems,
+          assignedQuestionId: selectedQ.id,
+          activeClue,
+        };
+
+        // Atomically update LevelProgress and set Player status to SOLVING
+        await tx.levelProgress.upsert({
           where: {
             playerId_levelId: {
               playerId: trimmedPlayerId,
@@ -182,20 +239,23 @@ export async function investigateObject(
             playerId: trimmedPlayerId,
             levelId: currentLevel,
             status: "IN_PROGRESS",
-            startedAt,
-            progressData: updatedData,
+            startedAt: progressStartedAt,
+            progressData: updatedData as any,
           },
           update: {
             status: "IN_PROGRESS",
-            startedAt,
-            progressData: updatedData,
+            startedAt: progressStartedAt,
+            progressData: updatedData as any,
           },
-        }),
-        prisma.player.update({
+        });
+
+        await tx.player.update({
           where: { id: trimmedPlayerId },
           data: { status: "SOLVING" },
-        }),
-      ]);
+        });
+
+        return selectedQ;
+      });
 
       const clueMessage =
         currentLevel === 1
@@ -218,10 +278,10 @@ export async function investigateObject(
           outcome: "clue",
           message: clueMessage,
           challenge: {
-            id: levelConfig.challenge.id,
-            levelId: levelConfig.challenge.levelId,
-            type: levelConfig.challenge.type,
-            question: levelConfig.challenge.question,
+            id: assignedQuestion.id,
+            levelId: assignedQuestion.levelId,
+            type: assignedQuestion.type,
+            question: assignedQuestion.question,
           },
           grantedItem: levelConfig.grantedItem,
         },
@@ -250,10 +310,10 @@ export async function investigateObject(
         levelId: currentLevel,
         status: "NOT_STARTED",
         startedAt,
-        progressData: updatedData,
+        progressData: updatedData as any,
       },
       update: {
-        progressData: updatedData,
+        progressData: updatedData as any,
       },
     });
 
@@ -362,27 +422,7 @@ export async function submitAnswer(
       return;
     }
 
-    // 5. Lookup authoritative level configuration
-    const currentLevel = player.currentLevel;
-    const levelConfig = getServerLevelConfig(currentLevel);
-    if (!levelConfig) {
-      res.status(400).json({
-        success: false,
-        error: `Level ${currentLevel} is not configured or deployed on this server.`,
-      });
-      return;
-    }
-
-    // 6. Verify challenge matches current player level
-    if (trimmedChallengeId !== levelConfig.challenge.id) {
-      res.status(400).json({
-        success: false,
-        error: `Invalid challenge ID for level ${currentLevel}: expected '${levelConfig.challenge.id}'`,
-      });
-      return;
-    }
-
-    // 7. Verify & Process Answer under interactive transaction with row-level lock
+    // 5. Verify & Process Answer under interactive transaction with row-level lock
     const txResult = await prisma.$transaction(
       async (tx) => {
         // Lock player row and fetch fresh state in a single round-trip
@@ -395,14 +435,64 @@ export async function submitAnswer(
           return { error: "Player not found", statusCode: 404 };
         }
 
-        if (freshPlayer.currentLevel !== currentLevel) {
+        // Determine which level this challenge belongs to
+        let challengeLevel = freshPlayer.currentLevel;
+        const qDef = getQuestionById(trimmedChallengeId);
+        if (qDef) {
+          challengeLevel = qDef.levelId;
+        } else {
+          for (let l = 1; l <= 10; l++) {
+            const cfg = getServerLevelConfig(l);
+            if (cfg?.challenge.id === trimmedChallengeId) {
+              challengeLevel = l;
+              break;
+            }
+          }
+        }
+
+        // Idempotent duplicate submission check for previously completed levels
+        if (challengeLevel < freshPlayer.currentLevel) {
+          const pastProgress = await tx.levelProgress.findUnique({
+            where: {
+              playerId_levelId: {
+                playerId: trimmedPlayerId,
+                levelId: challengeLevel,
+              },
+            },
+          });
+          if (pastProgress?.status === "COMPLETED") {
+            const awardedClue = getNextClueForCompletedLevel(challengeLevel);
+            return {
+              correct: true,
+              penaltySeconds: 0,
+              levelCompleted: true,
+              nextLevel: challengeLevel >= 10 ? null : challengeLevel + 1,
+              nextClue: awardedClue || undefined,
+              message:
+                challengeLevel >= 10
+                  ? "Mission accomplished! All traces decrypted. CORE-X recovered!"
+                  : "Trace decrypted. Level complete.",
+            };
+          }
+        }
+
+        if (challengeLevel > freshPlayer.currentLevel) {
           return {
-            error: `Level ${currentLevel} is no longer active for player. Player is on level ${freshPlayer.currentLevel}.`,
+            error: `Level ${challengeLevel} is not yet unlocked for player. Player is on level ${freshPlayer.currentLevel}.`,
             statusCode: 400,
           };
         }
 
-        // Verify LevelProgress is currently IN_PROGRESS
+        const currentLevel = freshPlayer.currentLevel;
+        const levelConfig = getServerLevelConfig(currentLevel);
+        if (!levelConfig) {
+          return {
+            error: `Level ${currentLevel} is not configured or deployed on this server.`,
+            statusCode: 400,
+          };
+        }
+
+        // Verify LevelProgress
         const levelProgress = await tx.levelProgress.findUnique({
           where: {
             playerId_levelId: {
@@ -412,6 +502,24 @@ export async function submitAnswer(
           },
         });
 
+        const currentData = normalizeProgressData(levelProgress?.progressData);
+
+        // Idempotency: If this level is already completed or marked solved, return success without duplicate penalties/points
+        if (levelProgress?.status === "COMPLETED" || currentData.isSolved) {
+          const awardedClue = getNextClueForCompletedLevel(currentLevel);
+          return {
+            correct: true,
+            penaltySeconds: 0,
+            levelCompleted: true,
+            nextLevel: currentLevel >= 10 ? null : currentLevel + 1,
+            nextClue: awardedClue || undefined,
+            message:
+              currentLevel >= 10
+                ? "Mission accomplished! All traces decrypted. CORE-X recovered!"
+                : "Trace decrypted. Level complete.",
+          };
+        }
+
         if (!levelProgress || levelProgress.status !== "IN_PROGRESS") {
           return {
             error: `Level ${currentLevel} is not in progress. You must investigate the clue before submitting an answer.`,
@@ -419,12 +527,34 @@ export async function submitAnswer(
           };
         }
 
-        // Authoritative Server-Side Answer Comparison
-        const expected = levelConfig.challenge.answer.trim().toLowerCase();
-        const submitted = trimmedAnswer.toLowerCase();
-        const isCorrect = submitted === expected;
+        // 10. Check authoritative assigned question ID
+        const assignedQuestionId = currentData.assignedQuestionId;
+        if (!assignedQuestionId || typeof assignedQuestionId !== "string" || !assignedQuestionId.trim()) {
+          return {
+            error: `No valid question assigned for level ${currentLevel}. Please investigate the clue object first.`,
+            statusCode: 400,
+          };
+        }
 
-        const currentData = normalizeProgressData(levelProgress.progressData);
+        // 7 & 9. Prevent client from overriding or changing the assigned question ID
+        if (trimmedChallengeId !== assignedQuestionId) {
+          return {
+            error: `Invalid challenge ID for level ${currentLevel}: expected '${assignedQuestionId}'`,
+            statusCode: 400,
+          };
+        }
+
+        const assignedQuestion = getQuestionById(assignedQuestionId);
+        if (!assignedQuestion) {
+          return {
+            error: `Assigned question '${assignedQuestionId}' not found in question bank.`,
+            statusCode: 400,
+          };
+        }
+
+        // 2, 3, 4. Validate answer ONLY against the exact assigned question
+        const isCorrect = isAnswerCorrect(assignedQuestion, trimmedAnswer);
+
         const updatedAttempts = currentData.attempts + 1;
         const updatedData = {
           ...currentData,
@@ -449,7 +579,7 @@ export async function submitAnswer(
               },
               data: {
                 penaltySeconds: { increment: levelConfig.penalties.wrongAnswer },
-                progressData: updatedData,
+                progressData: updatedData as any,
               },
             }),
           ]);
@@ -463,6 +593,11 @@ export async function submitAnswer(
         }
 
         // Correct answer: Complete current level, advance player or finalize mission
+        updatedData.isSolved = true;
+        updatedData.submittedAnswer = trimmedAnswer;
+        updatedData.solvedAt = new Date().toISOString();
+
+        const awardedClue = getNextClueForCompletedLevel(currentLevel);
         const isFinalLevel = currentLevel >= 10;
 
         if (isFinalLevel) {
@@ -493,7 +628,7 @@ export async function submitAnswer(
               data: {
                 status: "COMPLETED",
                 completedAt: endedAt,
-                progressData: updatedData,
+                progressData: updatedData as any,
               },
             }),
             tx.gameSession.update({
@@ -539,7 +674,7 @@ export async function submitAnswer(
             data: {
               status: "COMPLETED",
               completedAt: new Date(),
-              progressData: updatedData,
+              progressData: updatedData as any,
             },
           }),
           tx.player.update({
@@ -559,32 +694,33 @@ export async function submitAnswer(
             create: {
               playerId: trimmedPlayerId,
               levelId: nextLevel,
-              status: "NOT_STARTED",
+              status: "IN_PROGRESS",
               progressData: {
                 investigatedObjects: [],
                 collectedItems: [],
                 usedHints: [],
                 attempts: 0,
-              },
+                activeClue: awardedClue || undefined,
+              } as any,
             },
-            update: {},
+            update: {
+              progressData: {
+                investigatedObjects: [],
+                collectedItems: [],
+                usedHints: [],
+                attempts: 0,
+                activeClue: awardedClue || undefined,
+              } as any,
+            },
           }),
         ]);
-
-        const levelClue = levelConfig.clue
-          ? {
-              id: levelConfig.clue.id,
-              levelId: levelConfig.clue.levelId,
-              text: levelConfig.clue.text,
-            }
-          : undefined;
 
         return {
           correct: true,
           penaltySeconds: 0,
           levelCompleted: true,
           nextLevel,
-          nextClue: levelClue,
+          nextClue: awardedClue || undefined,
           message: "Trace decrypted. Level complete.",
         };
       },
@@ -708,15 +844,44 @@ export async function requestHint(
     }
 
     // 6. Verify challenge matches current level
-    if (trimmedChallengeId !== levelConfig.challenge.id) {
+    const existingProgress = await prisma.levelProgress.findUnique({
+      where: {
+        playerId_levelId: {
+          playerId: trimmedPlayerId,
+          levelId: currentLevel,
+        },
+      },
+    });
+
+    const currentProgressData = normalizeProgressData(existingProgress?.progressData);
+    const assignedQuestionId = currentProgressData.assignedQuestionId;
+
+    if (!assignedQuestionId || typeof assignedQuestionId !== "string" || !assignedQuestionId.trim()) {
       res.status(400).json({
         success: false,
-        error: `Invalid challenge ID for level ${currentLevel}: expected '${levelConfig.challenge.id}'`,
+        error: `No valid question assigned for level ${currentLevel}. Please investigate the clue object first.`,
       });
       return;
     }
 
-    const hint = levelConfig.hints[order];
+    if (trimmedChallengeId !== assignedQuestionId) {
+      res.status(400).json({
+        success: false,
+        error: `Invalid challenge ID for level ${currentLevel}: expected '${assignedQuestionId}'`,
+      });
+      return;
+    }
+
+    const assignedQ = getQuestionById(assignedQuestionId);
+    if (!assignedQ) {
+      res.status(400).json({
+        success: false,
+        error: `Assigned question '${assignedQuestionId}' not found in question bank.`,
+      });
+      return;
+    }
+
+    const hint = assignedQ.hints[order];
     if (!hint) {
       res.status(400).json({
         success: false,
@@ -787,11 +952,11 @@ export async function requestHint(
             status: "IN_PROGRESS",
             startedAt: new Date(),
             penaltySeconds: hint.penaltySeconds,
-            progressData: updatedData,
+            progressData: updatedData as any,
           },
           update: {
             penaltySeconds: { increment: hint.penaltySeconds },
-            progressData: updatedData,
+            progressData: updatedData as any,
           },
         }),
       ]);

@@ -89,6 +89,9 @@ export interface LevelProgressData {
   usedHints: number[];
   revealedHints?: { order: number; text: string }[];
   attempts: number;
+  activeClue?: Clue | undefined;
+  assignedQuestion?: Omit<Challenge, "answer"> | undefined;
+  isSolved?: boolean;
 }
 
 export interface SessionPauseState {
@@ -111,6 +114,7 @@ export interface PlayerRecoveryData {
     statusBeforePause?: PlayerStatus | null;
   } | null;
   levelProgress?: LevelProgressData | null;
+  activeClue?: Clue | undefined;
 }
 
 /**
@@ -118,7 +122,9 @@ export interface PlayerRecoveryData {
  */
 export interface GameApi {
   registerPlayer(payload: RegisterPayload): Promise<Player>;
-  startSession(playerId: string): Promise<{ startTime: number; sessionId?: string }>;
+  startSession(
+    playerId: string
+  ): Promise<{ startTime: number; sessionId?: string | undefined; activeClue?: Clue | undefined }>;
   pauseSession(playerId: string, sessionId: string): Promise<SessionPauseState>;
   resumeSession(playerId: string, sessionId: string): Promise<SessionPauseState>;
   investigateObject(playerId: string, objectId: string): Promise<InteractionResult>;

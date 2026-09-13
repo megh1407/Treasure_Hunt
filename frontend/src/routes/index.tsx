@@ -1,10 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowRight, Cpu, Radar, ScanLine, Timer } from "lucide-react";
-import { EVENT, GAME_CONFIG } from "@/game/config";
+import { DevelopedBy } from "@/components/DevelopedBy";
 
-const title = "Core Quest Finder — Virtual 3D Campus Treasure Hunt";
+const title = "Updates 2K26 | The Lost AR-VR Core";
 const description =
-  "A browser-based 3D virtual campus treasure hunt. Explore, investigate, solve encrypted traces and recover the lost CORE-X prototype.";
+  "A virtual AR/VR treasure hunt where engineering students explore, investigate, and solve hidden challenges across a virtual campus.";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -24,26 +24,26 @@ function Landing() {
       <div className="pointer-events-none absolute -top-40 left-1/2 h-[38rem] w-[38rem] -translate-x-1/2 rounded-full bg-primary/10 blur-3xl" />
       <div className="relative mx-auto flex min-h-dvh max-w-5xl flex-col px-6 py-8">
         <header className="flex items-center justify-between">
-          <span className="font-display text-sm tracking-[0.4em] text-primary">TECHFEST</span>
+          <span className="font-display text-sm tracking-[0.4em] text-primary">UPDATES 2K26</span>
           <nav className="flex items-center gap-4 text-xs text-muted-foreground">
-            <Link to="/guidelines" className="hover:text-primary">
+            <Link to="/guidelines" className="hover:text-primary transition-colors">
               Guidelines
             </Link>
-            <Link to="/leaderboard" className="hover:text-primary">
-              Dashboard
+            <Link to="/leaderboard" className="hover:text-primary transition-colors">
+              Leaderboard
             </Link>
           </nav>
         </header>
 
         <section className="flex flex-1 flex-col justify-center py-16">
           <p className="font-display text-xs tracking-[0.4em] text-primary/80">
-            {EVENT.name} · VIRTUAL AR/VR TREASURE HUNT
+            UPDATES 2K26 · VIRTUAL AR/VR TREASURE HUNT
           </p>
           <h1 className="mt-4 max-w-3xl text-4xl leading-tight text-foreground text-glow sm:text-6xl">
             THE LOST <span className="text-primary">AR-VR CORE</span>
           </h1>
           <p className="mt-6 max-w-2xl text-base leading-relaxed text-muted-foreground">
-            {EVENT.storyBody[0]} {EVENT.storyBody[1]}
+            A mysterious AR/VR prototype called CORE-X has disappeared from the campus innovation vault. Explore the virtual campus, investigate hidden traces, solve engineering-based challenges, and recover the lost core.
           </p>
 
           <div className="mt-10 flex flex-wrap items-center gap-3">
@@ -65,17 +65,32 @@ function Landing() {
           <dl className="mt-16 grid gap-4 sm:grid-cols-4">
             <Feature
               icon={Cpu}
-              label="Levels"
-              value={`${GAME_CONFIG.totalLevels} encrypted traces`}
+              label="QUEST"
+              value="Investigate hidden traces"
             />
-            <Feature icon={Timer} label="Scoring" value="Time + penalty" />
-            <Feature icon={ScanLine} label="Tools" value="AR scanner & hints" />
-            <Feature icon={Radar} label="Campus" value="12 explorable zones" />
+            <Feature
+              icon={Timer}
+              label="SCORING"
+              value="Time + penalty"
+            />
+            <Feature
+              icon={ScanLine}
+              label="TOOLS"
+              value="AR scanner & hints"
+            />
+            <Feature
+              icon={Radar}
+              label="CAMPUS"
+              value="Explore the virtual campus"
+            />
           </dl>
         </section>
 
-        <footer className="border-t border-border/60 pt-4 text-[11px] text-muted-foreground">
-          Prototype build · Level 1 (Library) playable · Levels 2–10 in deployment
+        <DevelopedBy className="my-6" />
+
+        <footer className="border-t border-border/60 pt-4 text-[11px] text-muted-foreground flex flex-wrap items-center justify-between gap-2">
+          <span>Explore. Investigate. Solve. Advance.</span>
+          <span className="font-mono text-[10px] opacity-70">Updates 2K26 · Core Quest</span>
         </footer>
       </div>
     </main>

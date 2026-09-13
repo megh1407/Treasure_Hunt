@@ -1,5 +1,6 @@
 // scratch/test_phase23_features.js
 const http = require("http");
+const { getQuestionById } = require("../backend/dist/config/questionBank");
 
 function request(options, body) {
   return new Promise((resolve, reject) => {
@@ -375,7 +376,9 @@ async function run() {
   console.log("\n--- SECTION 3: DESTINATION PRIVACY VERIFICATION ---");
 
   // 3.1 Solve Level 1 challenge and inspect nextClue response
-  console.log("\n[3.1] Submitting correct answer for Level 1 (answer: '65')...");
+  const qObj = getQuestionById(ch1Id);
+  const l1Ans = qObj ? qObj.answer : "65";
+  console.log(`\n[3.1] Submitting correct answer for Level 1 (${ch1Id} -> '${l1Ans}')...`);
   const solveRes = await request(
     {
       hostname: "localhost",
@@ -384,7 +387,7 @@ async function run() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
     },
-    { playerId, challengeId: ch1Id, answer: "65" }
+    { playerId, challengeId: ch1Id, answer: l1Ans }
   );
   console.log("Status:", solveRes.status, "Level completed:", solveRes.data?.data?.levelCompleted);
   if (solveRes.status !== 200 || !solveRes.data?.data?.levelCompleted) {

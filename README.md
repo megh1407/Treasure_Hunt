@@ -11,6 +11,7 @@ Core Quest Finder is a browser-based 3D campus treasure hunt. Players explore a 
 - Pause/resume, progressive hints, AR-style scanning, leaderboard, and admin views
 - Prisma transactions and row locking for concurrent submissions
 
+
 ## Project Structure
 
 ```text

@@ -28,7 +28,7 @@ export const GAME_CONFIG = {
 
 export const EVENT: EventConfig = {
   id: "techfest-2026",
-  name: "TECHFEST 2026",
+  name: "Updates 2K26",
   storyTitle: "THE LOST AR-VR CORE",
   storyBody: [
     "A mysterious AR/VR prototype called CORE-X has disappeared from the campus innovation vault.",

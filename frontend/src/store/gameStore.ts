@@ -680,16 +680,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     if (state.usedHints.includes(order)) return;
 
     try {
-      const playerId = state.player?.id ?? "local";
-      let res: Awaited<ReturnType<typeof api.requestHint>>;
-      try {
-        res = await api.requestHint(playerId, challenge.id, order);
-      } catch (err) {
-        if (!state.player || !isSessionSyncError(err)) throw err;
-        const session = await api.startSession(state.player.id);
-        set({ activeSessionId: session.sessionId, startedAt: session.startTime, isReady: true });
-        res = await api.requestHint(playerId, challenge.id, order);
-      }
+      const res = await api.requestHint(state.player?.id ?? "local", challenge.id, order);
       set({
         usedHints: [...state.usedHints, order],
         revealedHints: [...state.revealedHints, { order, text: res.text }],

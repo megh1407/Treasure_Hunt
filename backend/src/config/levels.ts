@@ -58,7 +58,7 @@ const LEVEL_1_DECOYS: readonly DecoyObjectConfig[] = [
   { id: "lib_chair", label: "Reading Chair", message: "Just a chair." },
   { id: "lib_cabinet", label: "Filing Cabinet", message: "Locked drawers, and the label reads: EMPTY - 2019." },
   { id: "lib_painting", label: "Founder's Portrait", message: "A portrait of the founder. The wall behind it is solid." },
-  { id: "lib_noticeboard", label: "Notice Board", message: "TECHFEST schedule, a lost-ID notice, and a torn poster." },
+  { id: "lib_noticeboard", label: "Notice Board", message: "Updates 2K26 schedule, a lost-ID notice, and a torn poster." },
   { id: "lib_box", label: "Storage Box", message: "Packing material and a broken projector lamp." },
 ];
 

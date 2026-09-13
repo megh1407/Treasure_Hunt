@@ -122,6 +122,7 @@ export interface StartSessionResponseDTO {
   sessionId: string;
   startTime: number;
   status: PlayerStatus;
+  activeClue?: ClueInfo;
 }
 
 /** DTO for completing a game session */
@@ -257,6 +258,9 @@ export interface LevelProgressDataDTO {
   usedHints: number[];
   revealedHints?: { order: number; text: string }[];
   attempts: number;
+  activeClue?: ClueInfo;
+  assignedQuestion?: ChallengeInfo;
+  isSolved?: boolean;
 }
 
 /** Response DTO for GET /api/players/:id supporting player recovery */
@@ -265,6 +269,7 @@ export interface PlayerRecoveryResponseDTO extends PlayerResponseDTO {
   activeSession: ActiveSessionInfoDTO | null;
   levelProgress?: LevelProgressDataDTO | null;
   inventory?: string[];
+  activeClue?: ClueInfo;
 }
 
 /** Leaderboard entry DTO for GET /api/leaderboard */

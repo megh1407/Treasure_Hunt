@@ -124,7 +124,7 @@ function RegisterPage() {
   return (
     <main className="holo-grid flex min-h-dvh items-center justify-center bg-background px-4 py-12">
       <form onSubmit={submit} className="holo-panel w-full max-w-lg rounded-2xl p-8 shadow-2xl border border-primary/30">
-        <p className="font-display text-[11px] tracking-[0.4em] text-primary">TECHFEST 2026</p>
+        <p className="font-display text-[11px] tracking-[0.4em] text-primary">UPDATES 2K26</p>
         <h1 className="mt-2 text-3xl font-bold tracking-tight text-foreground text-glow">
           PLAYER REGISTRATION
         </h1>

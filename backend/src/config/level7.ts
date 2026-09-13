@@ -16,8 +16,8 @@ export const LEVEL_7_CONFIG = {
   clue: {
     id: "clue-7",
     levelId: 7,
-    text: "The signal leaves the academic halls and leads outside toward the open greenery. Seek the stone marker in the Garden.",
-    destination: "Garden",
+    text: "Beneath open skies and stone arches where nature borders concrete, an ancient surveyor's mark harbors a forgotten frequency.",
+    destination: "",
   },
   challenge: {
     id: "ch-7",

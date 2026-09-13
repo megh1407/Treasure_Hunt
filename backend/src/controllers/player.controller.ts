@@ -2,6 +2,8 @@ import { Request, Response, NextFunction } from "express";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { getServerLevelConfig } from "../config/levels";
+import { getQuestionById } from "../config/questionBank";
+import { getDefaultClueForLevel } from "../config/clueBank";
 import { normalizeProgressData } from "../lib/progress";
 import {
   ApiResponse,
@@ -108,12 +110,21 @@ export async function getPlayerById(
 
     const levelConfig = getServerLevelConfig(player.currentLevel);
 
+    const assignedQuestion = progressData.assignedQuestionId
+      ? getQuestionById(progressData.assignedQuestionId)
+      : null;
+
     const revealedHints = progressData.usedHints
       .map((order) => {
+        if (assignedQuestion && assignedQuestion.hints[order]) {
+          return { order, text: assignedQuestion.hints[order].text };
+        }
         const hint = levelConfig?.hints[order];
         return hint ? { order, text: hint.text } : null;
       })
       .filter((h): h is { order: number; text: string } => h !== null);
+
+    const activeClue = progressData.activeClue || getDefaultClueForLevel(player.currentLevel);
 
     const levelProgressDTO: LevelProgressDataDTO = {
       level: player.currentLevel,
@@ -122,6 +133,22 @@ export async function getPlayerById(
       usedHints: progressData.usedHints,
       revealedHints,
       attempts: progressData.attempts,
+      activeClue: activeClue
+        ? {
+            id: activeClue.id,
+            levelId: activeClue.levelId,
+            text: activeClue.text,
+          }
+        : undefined,
+      assignedQuestion: assignedQuestion
+        ? {
+            id: assignedQuestion.id,
+            levelId: assignedQuestion.levelId,
+            type: assignedQuestion.type,
+            question: assignedQuestion.question,
+          }
+        : undefined,
+      isSolved: !!progressData.isSolved,
     };
 
     const cumulativeInventory = Array.from(
@@ -153,6 +180,13 @@ export async function getPlayerById(
             }
           : null,
         levelProgress: levelProgressDTO,
+        activeClue: activeClue
+          ? {
+              id: activeClue.id,
+              levelId: activeClue.levelId,
+              text: activeClue.text,
+            }
+          : undefined,
       },
     });
   } catch (error) {

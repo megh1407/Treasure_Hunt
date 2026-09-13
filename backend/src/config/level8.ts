@@ -16,8 +16,8 @@ export const LEVEL_8_CONFIG = {
   clue: {
     id: "clue-8",
     levelId: 8,
-    text: "The decrypted coordinates point to the high-security subterranean core. Breach the Server Room.",
-    destination: "Server Room",
+    text: "The subterranean brain pulsing behind secure doors, guarded by biometric locks and sub-zero airflow, awaits your decryption.",
+    destination: "",
   },
   challenge: {
     id: "ch-8",

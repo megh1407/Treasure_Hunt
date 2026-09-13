@@ -87,25 +87,25 @@ export const Route = createRootRouteWithContext<{
         content: "width=device-width, initial-scale=1",
       },
 
-      { title: "Core Quest Finder" },
+      { title: "Updates 2K26 | The Lost AR-VR Core" },
 
       {
         name: "description",
         content:
-          "Core Quest Finder is an interactive platform for exploring quests, discovering clues, completing challenges, and competing with other users.",
+          "A virtual AR/VR treasure hunt where engineering students explore, investigate, and solve hidden challenges across a virtual campus.",
       },
 
-      { name: "author", content: "Core Quest Finder Team" },
+      { name: "author", content: "Updates 2K26" },
 
       {
         property: "og:title",
-        content: "Core Quest Finder",
+        content: "Updates 2K26 | The Lost AR-VR Core",
       },
 
       {
         property: "og:description",
         content:
-          "Core Quest Finder is an interactive platform for exploring quests, discovering clues, completing challenges, and competing with other users.",
+          "A virtual AR/VR treasure hunt where engineering students explore, investigate, and solve hidden challenges across a virtual campus.",
       },
 
       {

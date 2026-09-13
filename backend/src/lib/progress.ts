@@ -5,11 +5,22 @@
  * and resilient against legacy, null, or malformed data.
  */
 
+export interface ActiveClueData {
+  id: string;
+  levelId: number;
+  text: string;
+}
+
 export interface LevelProgressData {
   investigatedObjects: string[];
   collectedItems: string[];
   usedHints: number[];
   attempts: number;
+  assignedQuestionId?: string;
+  activeClue?: ActiveClueData;
+  isSolved?: boolean;
+  submittedAnswer?: string;
+  solvedAt?: string;
 }
 
 /**
@@ -72,10 +83,43 @@ export function normalizeProgressData(raw: unknown): LevelProgressData {
       ? Math.floor(obj["attempts"])
       : 0;
 
-  return {
+  const result: LevelProgressData = {
     investigatedObjects,
     collectedItems,
     usedHints,
     attempts,
   };
+
+  if (typeof obj["assignedQuestionId"] === "string" && obj["assignedQuestionId"].trim().length > 0) {
+    result.assignedQuestionId = obj["assignedQuestionId"].trim();
+  }
+
+  if (obj["activeClue"] && typeof obj["activeClue"] === "object") {
+    const clueObj = obj["activeClue"] as Record<string, unknown>;
+    if (
+      typeof clueObj["id"] === "string" &&
+      typeof clueObj["levelId"] === "number" &&
+      typeof clueObj["text"] === "string"
+    ) {
+      result.activeClue = {
+        id: clueObj["id"].trim(),
+        levelId: clueObj["levelId"],
+        text: clueObj["text"].trim(),
+      };
+    }
+  }
+
+  if (typeof obj["isSolved"] === "boolean") {
+    result.isSolved = obj["isSolved"];
+  }
+
+  if (typeof obj["submittedAnswer"] === "string") {
+    result.submittedAnswer = obj["submittedAnswer"];
+  }
+
+  if (typeof obj["solvedAt"] === "string") {
+    result.solvedAt = obj["solvedAt"];
+  }
+
+  return result;
 }

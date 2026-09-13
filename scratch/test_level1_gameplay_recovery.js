@@ -138,16 +138,17 @@ async function runLevel1RecoveryTests() {
     assert(clueRes.status === 200 && clueRes.data.success, "Clue investigation request failed");
     assert(clueRes.data.data.outcome === "clue", "Target outcome should be 'clue'");
     assert(clueRes.data.data.grantedItem === "usb_drive", "Granted item should be 'usb_drive'");
-    assert(clueRes.data.data.challenge.id === "ch-1", "Challenge id should be 'ch-1'");
+    assert(clueRes.data.data.challenge.id.startsWith("ch-1"), "Challenge id should start with 'ch-1'");
+    const activeChallengeId = clueRes.data.data.challenge.id;
     // Verify security: answer must NOT be leaked
     assert(!clueRes.data.data.challenge.answer, "SECURITY: Answer must NOT be present in challenge response");
-    console.log("✓ Clue investigated, challenge unlocked & item granted without leaking answer");
+    console.log("✓ Clue investigated, challenge unlocked & item granted without leaking answer:", activeChallengeId);
 
     // 6. Request Hint 1
     console.log("\n[6/17] Requesting Hint 1 (POST /api/game/hint)...");
     const hint1Res = await request("/game/hint", {
       method: "POST",
-      body: { playerId, challengeId: "ch-1", order: 1 },
+      body: { playerId, challengeId: activeChallengeId, order: 1 },
     });
     assert(hint1Res.status === 200 && hint1Res.data.success, "Hint 1 request failed");
     assert(hint1Res.data.data.order === 1, "Hint order should be 1");
@@ -158,7 +159,7 @@ async function runLevel1RecoveryTests() {
     console.log("\n[7/17] Requesting Hint 2 (POST /api/game/hint)...");
     const hint2Res = await request("/game/hint", {
       method: "POST",
-      body: { playerId, challengeId: "ch-1", order: 2 },
+      body: { playerId, challengeId: activeChallengeId, order: 2 },
     });
     assert(hint2Res.status === 200 && hint2Res.data.success, "Hint 2 request failed");
     assert(hint2Res.data.data.order === 2, "Hint order should be 2");
@@ -169,7 +170,7 @@ async function runLevel1RecoveryTests() {
     console.log("\n[8/17] Submitting wrong answer (POST /api/game/submit-answer)...");
     const wrongAnsRes = await request("/game/submit-answer", {
       method: "POST",
-      body: { playerId, challengeId: "ch-1", answer: "wrong_answer_42" },
+      body: { playerId, challengeId: activeChallengeId, answer: "wrong_answer_42" },
     });
     assert(wrongAnsRes.status === 200 && wrongAnsRes.data.success, "Wrong answer request failed");
     assert(wrongAnsRes.data.data.correct === false, "Answer should be incorrect");
@@ -272,11 +273,18 @@ async function runLevel1RecoveryTests() {
     assert(sessionCount === 1, `Expected exactly 1 session, found ${sessionCount}`);
     console.log("✓ Simulated refresh recovery fully verified with zero session duplication and exact state restoration");
 
-    // 14. Complete Level 1 with answer "65"
-    console.log("\n[14/17] Submitting correct answer '65' to complete Level 1 (POST /api/game/submit-answer)...");
+    // 14. Complete Level 1 with correct answer based on assigned challenge
+    const answersMap = {
+      "ch-1": "65",
+      "ch-1-1": "65",
+      "ch-1-2": "96",
+      "ch-1-3": "42",
+    };
+    const validAnswer = answersMap[activeChallengeId] || "65";
+    console.log(`\n[14/17] Submitting correct answer '${validAnswer}' for ${activeChallengeId} (POST /api/game/submit-answer)...`);
     const correctAnsRes = await request("/game/submit-answer", {
       method: "POST",
-      body: { playerId, challengeId: "ch-1", answer: "65" },
+      body: { playerId, challengeId: activeChallengeId, answer: validAnswer },
     });
     assert(correctAnsRes.status === 200 && correctAnsRes.data.success, "Correct answer submission failed");
     assert(correctAnsRes.data.data.correct === true, "Answer should be accepted as correct");

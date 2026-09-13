@@ -171,11 +171,11 @@ export interface Clue {
   levelId: number;
   text: string;
   destination: string;
-  building: BuildingId;
-  room: string;
-  objectId: string;
-  requiredItem: InventoryItemId | null;
-  nextLevel: number | null;
+  building?: BuildingId | undefined;
+  room?: string | undefined;
+  objectId?: string | undefined;
+  requiredItem?: InventoryItemId | null | undefined;
+  nextLevel?: number | null | undefined;
 }
 
 export interface Level {

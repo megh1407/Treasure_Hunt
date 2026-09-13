@@ -57,7 +57,7 @@ export function Hud({ nearby }: { nearby: ProximityTarget | null }) {
     <div className="pointer-events-none absolute inset-0 z-20 flex flex-col justify-between p-3 sm:p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="holo-panel rounded-lg px-4 py-2">
-          <div className="font-display text-xs tracking-[0.35em] text-primary">TECHFEST</div>
+          <div className="font-display text-xs tracking-[0.35em] text-primary">UPDATES 2K26</div>
           <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
             {EVENT.storyTitle}
           </div>

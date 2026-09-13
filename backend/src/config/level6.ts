@@ -16,8 +16,8 @@ export const LEVEL_6_CONFIG = {
   clue: {
     id: "clue-6",
     levelId: 6,
-    text: "The sixth trace points to the high-frequency test benches. Find the broken circuit board in the Electronics Lab.",
-    destination: "Electronics Lab",
+    text: "Green boards with copper veins and dancing phosphor waves on glass screens hold the key to the next transmission.",
+    destination: "",
   },
   challenge: {
     id: "ch-6",

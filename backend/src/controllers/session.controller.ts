@@ -1,5 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import { prisma } from "../lib/prisma";
+import { getDefaultClueForLevel } from "../config/clueBank";
+import { normalizeProgressData } from "../lib/progress";
 import type {
   ApiResponse,
   CompleteSessionDTO,
@@ -46,7 +48,39 @@ export async function startSession(
       return;
     }
 
-    // 2. Check for an active session
+    // 2. Ensure LevelProgress exists and has an activeClue
+    let progress = await prisma.levelProgress.findFirst({
+      where: {
+        playerId: trimmedPlayerId,
+        levelId: player.currentLevel,
+      },
+    });
+
+    const normalized = normalizeProgressData(progress?.progressData);
+    let activeClue = normalized.activeClue;
+
+    if (!activeClue) {
+      activeClue = getDefaultClueForLevel(player.currentLevel);
+      normalized.activeClue = activeClue;
+
+      if (progress) {
+        await prisma.levelProgress.update({
+          where: { id: progress.id },
+          data: { progressData: normalized as any },
+        });
+      } else {
+        progress = await prisma.levelProgress.create({
+          data: {
+            playerId: trimmedPlayerId,
+            levelId: player.currentLevel,
+            status: "IN_PROGRESS",
+            progressData: normalized as any,
+          },
+        });
+      }
+    }
+
+    // 3. Check for an active session
     const existingActiveSession = await prisma.gameSession.findFirst({
       where: {
         playerId: trimmedPlayerId,
@@ -56,8 +90,10 @@ export async function startSession(
     });
 
     if (existingActiveSession) {
-      // Ensure player status is set to SEARCHING
-      if (player.status !== "SEARCHING") {
+      // Transition NOT_STARTED to SEARCHING; preserve SOLVING, PAUSED, COMPLETED
+      let effectiveStatus = player.status;
+      if (player.status === "NOT_STARTED") {
+        effectiveStatus = "SEARCHING";
         await prisma.player.update({
           where: { id: trimmedPlayerId },
           data: { status: "SEARCHING" },
@@ -69,14 +105,16 @@ export async function startSession(
         data: {
           sessionId: existingActiveSession.id,
           startTime: existingActiveSession.startedAt.getTime(),
-          status: "SEARCHING",
+          status: effectiveStatus,
+          activeClue,
         },
         message: "Active game session already in progress",
       });
       return;
     }
 
-    // 3. Create a new session and transition player status to SEARCHING atomically
+    // 4. Create a new session and transition player status if NOT_STARTED
+    const newStatus = player.status === "NOT_STARTED" ? "SEARCHING" : player.status;
     const [newSession, updatedPlayer] = await prisma.$transaction([
       prisma.gameSession.create({
         data: {
@@ -87,7 +125,7 @@ export async function startSession(
       prisma.player.update({
         where: { id: trimmedPlayerId },
         data: {
-          status: "SEARCHING",
+          status: newStatus,
         },
       }),
     ]);
@@ -98,6 +136,7 @@ export async function startSession(
         sessionId: newSession.id,
         startTime: newSession.startedAt.getTime(),
         status: updatedPlayer.status,
+        activeClue,
       },
       message: "Game session started successfully",
     });

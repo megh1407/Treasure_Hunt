@@ -37,7 +37,7 @@ function PlayerDashboardPage() {
               PLAYER DASHBOARD
             </h1>
             <p className="mt-1 text-xs text-muted-foreground">
-              Official standings and operative guidelines for Techfest 2026
+              Official standings and operative guidelines for Updates 2K26
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -161,7 +161,7 @@ function PlayerDashboardPage() {
             </div>
 
             <div className="mt-5 flex items-center justify-between border-t border-border/50 pt-4">
-              <span className="text-[11px] text-muted-foreground font-mono">Techfest 2026 Core Quest</span>
+              <span className="text-[11px] text-muted-foreground font-mono">Updates 2K26 · Core Quest</span>
               <Link to="/guidelines">
                 <Button size="sm" variant="outline" className="border-primary/40 text-xs">
                   View Mission Rules

@@ -16,8 +16,8 @@ export const LEVEL_9_CONFIG = {
   clue: {
     id: "clue-9",
     levelId: 9,
-    text: "The root override is accepted. The heavy blast doors to the campus Innovation Vault have unlocked. Enter the Secret Room to recover CORE-X.",
-    destination: "Secret Room",
+    text: "The fortified core where the campus shields its most advanced confidential prototypes has engaged its primary containment clamps.",
+    destination: "",
   },
   challenge: {
     id: "ch-9",

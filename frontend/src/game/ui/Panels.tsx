@@ -48,13 +48,15 @@ export function ChallengePanel() {
 
   if (!challenge) return null;
 
+  const penaltySeconds = challenge.penaltySeconds ?? 30;
+
   const submit = async () => {
     if (!value.trim() || busy) return;
     setBusy(true);
     try {
       const ok = await submitAnswer(value.trim());
       if (!ok) {
-        setError(`Incorrect. +${challenge.penaltySeconds}s penalty added. Try again.`);
+        setError(`Incorrect. +${penaltySeconds}s penalty added. Try again.`);
         setValue("");
       }
     } finally {
@@ -65,7 +67,7 @@ export function ChallengePanel() {
   return (
     <HoloPanel
       title={`CHALLENGE — ${challenge.type.replace("_", " ").toUpperCase()}`}
-      subtitle={`Attempts: ${attempts} · Wrong answer penalty: +${challenge.penaltySeconds}s`}
+      subtitle={`Attempts: ${attempts} · Wrong answer penalty: +${penaltySeconds}s`}
       onClose={() => setPanel(null)}
       footer={
         <>
@@ -152,7 +154,10 @@ export function HintPanel() {
   const revealed = useGameStore((s) => s.revealedHints);
   const setPanel = useGameStore((s) => s.setPanel);
   const activeChallenge = useGameStore((s) => s.activeChallenge);
-  const hints = getLevel(level).challenge.hints;
+  const hints =
+    activeChallenge?.hints && activeChallenge.hints.length > 0
+      ? activeChallenge.hints
+      : getLevel(level).challenge.hints;
 
   return (
     <HoloPanel
@@ -430,7 +435,7 @@ export function VictoryModal() {
         </div>
 
         <p className="mt-4 font-display text-xs uppercase tracking-[0.4em] text-cyan-400">
-          TECHFEST 2026 · FINAL QUEST ACCOMPLISHED
+          UPDATES 2K26 · FINAL QUEST ACCOMPLISHED
         </p>
         <h1 className="mt-2 font-display text-3xl font-extrabold text-foreground text-glow sm:text-4xl">
           CORE-X PROTOTYPE RECOVERED!

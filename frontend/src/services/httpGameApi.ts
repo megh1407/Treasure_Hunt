@@ -50,6 +50,12 @@ interface BackendStartSessionDto {
   sessionId: string;
   startTime: number;
   status: string;
+  activeClue?: {
+    id: string;
+    levelId: number;
+    text: string;
+    destination?: string;
+  };
 }
 
 interface BackendPauseSessionDto {
@@ -130,7 +136,16 @@ interface BackendRecoveryDto extends BackendPlayerDto {
     usedHints: number[];
     revealedHints?: { order: number; text: string }[];
     attempts: number;
+    activeClue?: { id: string; levelId: number; text: string; destination?: string };
+    assignedQuestion?: { id: string; levelId: number; type: Challenge["type"]; question: string };
+    isSolved?: boolean;
   } | null;
+  activeClue?: {
+    id: string;
+    levelId: number;
+    text: string;
+    destination?: string;
+  };
 }
 
 export class HttpGameApi implements GameApi {
@@ -244,7 +259,9 @@ export class HttpGameApi implements GameApi {
    * Starts or resumes a game session via POST /api/sessions/start.
    * Stores the session ID and returns the start timestamp.
    */
-  async startSession(playerId: string): Promise<{ startTime: number; sessionId: string }> {
+  async startSession(
+    playerId: string
+  ): Promise<{ startTime: number; sessionId: string; activeClue?: Clue | undefined }> {
     const data = await this.request<BackendStartSessionDto>("/sessions/start", {
       method: "POST",
       body: JSON.stringify({ playerId }),
@@ -262,9 +279,19 @@ export class HttpGameApi implements GameApi {
 
     this.activeSessionId = sessionId;
 
+    const activeClue = data?.activeClue
+      ? {
+          id: data.activeClue.id,
+          levelId: data.activeClue.levelId,
+          text: data.activeClue.text,
+          destination: "",
+        }
+      : undefined;
+
     return {
       startTime,
       sessionId,
+      activeClue,
     };
   }
 
@@ -579,7 +606,34 @@ export class HttpGameApi implements GameApi {
         this.activeSessionId = activeSessionData.id;
       }
 
-      const levelProgress = data.levelProgress ?? null;
+      const levelProgressRaw = data.levelProgress ?? null;
+      const activeClueRaw = data.activeClue || levelProgressRaw?.activeClue;
+      const activeClue = activeClueRaw
+        ? {
+            id: activeClueRaw.id,
+            levelId: activeClueRaw.levelId,
+            text: activeClueRaw.text,
+            destination: "",
+          }
+        : undefined;
+
+      const levelProgress = levelProgressRaw
+        ? {
+            ...levelProgressRaw,
+            activeClue,
+            assignedQuestion: levelProgressRaw.assignedQuestion
+              ? {
+                  id: levelProgressRaw.assignedQuestion.id,
+                  levelId: levelProgressRaw.assignedQuestion.levelId,
+                  type: levelProgressRaw.assignedQuestion.type,
+                  question: levelProgressRaw.assignedQuestion.question,
+                  hints: [],
+                  penaltySeconds: 30,
+                  active: true,
+                }
+              : undefined,
+          }
+        : null;
 
       const cumulativeInv = (
         raw.inventory && Array.isArray(raw.inventory) && raw.inventory.length > 0
@@ -612,6 +666,7 @@ export class HttpGameApi implements GameApi {
         player,
         activeSession,
         levelProgress,
+        activeClue,
       };
     } catch {
       return null;
@@ -692,5 +747,41 @@ export class HttpGameApi implements GameApi {
       method: "DELETE",
       headers: { Authorization: `Bearer ${token}` },
     });
+  }
+
+  /**
+   * Securely downloads the authoritative Contestants Excel report.
+   */
+  async downloadAdminExcel(token: string): Promise<void> {
+    const res = await fetch(`${this.baseUrl}/admin/export/excel`, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!res.ok) {
+      throw new Error("Unable to download contestant data. Please try again.");
+    }
+
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    
+    // Extract filename from Content-Disposition if present, else fallback
+    const disposition = res.headers.get("Content-Disposition");
+    let filename = `updates-2k26-contestants-${new Date().toISOString().split("T")[0]}.xlsx`;
+    if (disposition && disposition.includes("filename=")) {
+      const match = disposition.match(/filename="?([^"]+)"?/);
+      if (match && match[1]) {
+        filename = match[1];
+      }
+    }
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
   }
 }
