@@ -1,129 +1,167 @@
-# Core Quest Finder — Production Deployment & Operations Runbook
+# Core Quest Finder / Updates 2K26 — Production Deployment Runbook
 
-This document details the exact procedures for deploying, maintaining, and rolling back **Core Quest Finder** in a production environment.
-
----
-
-## 1. System Requirements & Architecture
-
-- **Backend**: Node.js v20+ / v22+ (TypeScript -> Express + Prisma ORM)
-- **Frontend**: Vite + TanStack Start (React 19 + Three.js / React Three Fiber)
-- **Database**: PostgreSQL 15+ (Hosted on Supabase with Supavisor transaction pooler)
-- **Port Mapping**:
-  - Backend API: `5000` (Endpoints: `/api/*`, `/health`)
-  - Frontend Preview/SSR: `4173`
-  - Public Reverse Proxy (Nginx): `80` (HTTP redirect) / `443` (HTTPS)
+This document details the exact, step-by-step procedures for deploying, configuring, maintaining, and rolling back **Core Quest Finder / Updates 2K26** across our target production cloud stack:
+- **Frontend**: Vercel (Vite + React 19 + TanStack Router)
+- **Backend**: Render (Node.js 20+ / Express + Prisma ORM)
+- **Database**: Supabase PostgreSQL 15+ (Hosted PostgreSQL with Supavisor connection pooling)
 
 ---
 
-## 2. Environment Variables Specification
+## 1. Architecture & Port Mapping
 
-### Backend (`backend/.env`)
-| Variable | Required | Example | Description |
-| :--- | :---: | :--- | :--- |
-| `PORT` | Yes | `5000` | HTTP port on which the Express server listens |
-| `NODE_ENV` | Yes | `production` | Environment mode; suppresses stack traces and sanitizes errors |
-| `DATABASE_URL` | Yes | `postgres://postgres.[REF]:[PASS]@aws-0-ap-southeast-2.pooler.supabase.com:6543/postgres?sslmode=require&pgbouncer=true&connection_limit=10&pool_timeout=20` | Transaction pooler URL (port 6543) used by Prisma Client |
-| `DIRECT_URL` | Yes | `postgres://postgres.[REF]:[PASS]@aws-0-ap-southeast-2.pooler.supabase.com:5432/postgres?sslmode=require` | Direct session pooler connection (port 5432) used for `prisma migrate deploy` |
-| `CORS_ORIGIN` | Yes | `https://game.example.com,https://corequest.campus.edu` | Comma-separated list of allowed frontend origins (no trailing slashes) |
+```mermaid
+flowchart LR
+    A[User Browser] -->|HTTPS| B[Vercel Frontend CDN]
+    B -->|VITE_API_URL| C[Render Backend Web Service]
+    C -->|DATABASE_URL: Port 6543| D[Supabase Transaction Pooler]
+    C -->|DIRECT_URL: Port 5432| E[Supabase Direct DB / Migrations]
+```
 
-### Frontend (`frontend/.env`)
-| Variable | Required | Example | Description |
-| :--- | :---: | :--- | :--- |
-| `VITE_API_URL` | No | `/api` | Relative `/api` fallback when hosted behind Nginx reverse proxy |
-| `VITE_USE_MOCK_API` | No | `false` | Always `false` in production |
+- **Frontend (Vercel)**: Serves the cyber-themed 3D quest client. SPA routes (`/`, `/register`, `/leaderboard`, `/admin`, `/play`, `/guidelines`) fall back cleanly without 404s.
+- **Backend (Render Web Service)**: Node.js Express server binding to `0.0.0.0` on `$PORT`. Exposes REST API on `/api/*` and health probes on `/health` and `/api/health`.
+- **Database (Supabase PostgreSQL)**: Authoritative state store using Prisma ORM.
 
 ---
 
-## 3. Database Migration Runbook (Non-Destructive)
+## 2. Supabase PostgreSQL Configuration
 
-> [!IMPORTANT]
-> Never execute `prisma migrate reset` in production. Always use `prisma migrate deploy`.
+> [!CAUTION]
+> **STRICT ZERO-DATA-LOSS RULE**:
+> NEVER run `prisma migrate reset`, `prisma db push --force-reset`, or any destructive command in production.
+> Always use `prisma migrate deploy` to safely apply pending schema migrations.
 
+### Connection Strings Format
+
+Supabase provides two distinct connection URLs in **Project Settings -> Database -> Connection string**:
+
+1. **Transaction Pooler (`DATABASE_URL`) — Port 6543**:
+   - Used at runtime by the backend Express server.
+   - Enables high-concurrency connection pooling via Supavisor.
+   - Format:
+     ```text
+     postgresql://postgres.[PROJECT-REF]:[DB-PASSWORD]@aws-0-[REGION].pooler.supabase.com:6543/postgres?pgbouncer=true&sslmode=require
+     ```
+
+2. **Session / Direct Connection (`DIRECT_URL`) — Port 5432**:
+   - Required by Prisma CLI during deployment migrations because transaction poolers do not support schema migrations / advisory locks.
+   - Format:
+     ```text
+     postgresql://postgres.[PROJECT-REF]:[DB-PASSWORD]@aws-0-[REGION].pooler.supabase.com:5432/postgres?sslmode=require
+     ```
+
+### Database Deployment / Migration Command
+In the `backend` directory:
 ```bash
-cd backend
+# Non-destructive deployment of all pending migrations
+npx prisma migrate deploy
 
-# 1. Verify connection and check pending migrations
+# Verify migration status
 npx prisma migrate status
-
-# 2. Apply pending migrations non-destructively
-npm run prisma:migrate:deploy
-# or: npx prisma migrate deploy
-
-# 3. Generate latest Prisma client artifacts
-npm run prisma:generate
 ```
 
 ---
 
-## 4. Production Deployment Methods
+## 3. Render Backend Deployment
 
-### Method A: PM2 + Nginx Reverse Proxy (Recommended for VPS / Dedicated Host)
+Render hosts the backend Node.js Express service. You can deploy either using the included [`render.yaml`](./render.yaml) blueprint or via the Render Web Dashboard.
 
-#### Step 1: Clone and Install
-```bash
-git clone <REPOSITORY_URL> /var/www/core-quest-finder
-cd /var/www/core-quest-finder
+### Method A: Automated via `render.yaml` (Recommended)
+1. In the Render Dashboard, click **New -> Blueprint**.
+2. Connect your Git repository.
+3. Render reads `render.yaml` automatically, configuring:
+   - **Root Directory**: `backend`
+   - **Build Command**: `npm ci && npm run prisma:generate && npm run build`
+   - **Start Command**: `npm start`
+   - **Health Check Path**: `/api/health`
+4. Under the Environment Variables section in Render, input your secret values for:
+   - `DATABASE_URL`
+   - `DIRECT_URL`
+   - `CORS_ORIGIN`
+   - `ADMIN_PASSWORD`
 
-# Install backend dependencies
-cd backend
-npm ci
-npm run prisma:generate
-npm run build
+### Method B: Manual Web Service Setup
+1. In Render Dashboard, click **New -> Web Service**.
+2. Connect your GitHub repository.
+3. Configure settings:
+   - **Name**: `core-quest-finder-backend`
+   - **Language**: `Node`
+   - **Root Directory**: `backend`
+   - **Build Command**: `npm ci && npm run prisma:generate && npm run build`
+   - **Start Command**: `npm start`
+   - **Health Check Path**: `/api/health`
+4. In **Environment Variables**, add:
 
-# Install frontend dependencies and build production bundles
-cd ../frontend
-npm ci
-npm run build
-```
-
-#### Step 2: Configure Environment
-Ensure `backend/.env` exists with real PostgreSQL credentials and `NODE_ENV=production`.
-
-#### Step 3: Start Services with PM2
-```bash
-cd /var/www/core-quest-finder
-mkdir -p logs
-pm2 start ecosystem.config.cjs --env production
-pm2 save
-pm2 startup
-```
-
-#### Step 4: Configure Nginx
-```bash
-sudo cp nginx.conf /etc/nginx/sites-available/core-quest-finder
-# Replace YOUR_DOMAIN.COM in /etc/nginx/sites-available/core-quest-finder with your real domain
-sudo ln -s /etc/nginx/sites-available/core-quest-finder /etc/nginx/sites-enabled/
-sudo nginx -t
-sudo systemctl reload nginx
-```
+| Key | Example Value | Description |
+| :--- | :--- | :--- |
+| `NODE_ENV` | `production` | Enables error sanitization & performance optimizations |
+| `HOST` | `0.0.0.0` | Required for Render container binding |
+| `PORT` | `5000` | Render assigns `$PORT` dynamically, fallback to 5000 |
+| `DATABASE_URL` | *(Supabase Pooler URL, Port 6543)* | Runtime Prisma connection |
+| `DIRECT_URL` | *(Supabase Direct URL, Port 5432)* | Migration Prisma connection |
+| `CORS_ORIGIN` | `https://your-frontend.vercel.app` | Allowed Vercel origin (comma-separated if multiple, NO trailing slash, NO wildcard `*`) |
+| `ADMIN_PASSWORD` | `YOUR_SECURE_ADMIN_PASSWORD` | Master password for `/admin` and Excel export |
 
 ---
 
-### Method B: Docker Compose (Containerized Deployment)
+## 4. Vercel Frontend Deployment
 
-```bash
-cd /var/www/core-quest-finder
+Vercel hosts the client application.
 
-# 1. Ensure backend/.env has the production database credentials
-cp backend/.env.example backend/.env
-# Edit backend/.env with production credentials
+### Setup Instructions
+1. In the Vercel Dashboard, click **Add New -> Project**.
+2. Import your Git repository.
+3. Configure the Project Settings:
+  - **Framework Preset**: `TanStack Start`
+   - **Root Directory**: `frontend` *(Click Edit and select the `frontend` folder)*
+   - **Build Command**: `npm run build`
+  - **Output Directory**: leave blank/default (`.output` is generated by Nitro)
+   - **Install Command**: `npm install`
+4. Under **Environment Variables**, add:
 
-# 2. Build and start backend container in detached mode
-docker compose -f docker-compose.production.yml up -d --build
+| Key | Example Value | Description |
+| :--- | :--- | :--- |
+| `VITE_API_URL` | `https://core-quest-finder-backend.onrender.com/api` | Render backend URL (with or without `/api`, normalized automatically) |
+| `VITE_USE_MOCK_API` | `false` | Always `false` in production to use PostgreSQL backend |
 
-# 3. Verify health
-docker compose -f docker-compose.production.yml ps
-curl http://localhost:5000/health
-```
+> [!NOTE]
+> The [`frontend/vercel.json`](./frontend/vercel.json) file selects the `tanstack-start` framework. This project uses TanStack Start SSR with Nitro, so leave **Output Directory** blank/default; Nitro generates `.output` and Vercel handles the server routes. Do not use the old static `dist/client` output setting.
+
+### If Vercel still fails to build
+
+- Set **Root Directory** to `frontend`, not the repository root.
+- Set **Framework Preset** to `TanStack Start` or leave it on automatic detection.
+- Use `npm install` as the install command and `npm run build` as the build command.
+- Set `VITE_API_URL` for **Production, Preview, and Development**, then redeploy. `VITE_*` values are embedded at build time.
+- In Render, set `NODE_ENV=production` and update `CORS_ORIGIN` to the exact Vercel URL, without a trailing slash. Include preview/custom domains as comma-separated origins if needed.
+- Render may sleep on a free plan; the first API request can take several seconds while the service wakes up.
 
 ---
 
-## 5. Health Probes & Monitoring
+## 5. Security & Isolation Rules
 
-The system exposes two machine-readable health endpoints:
-- `GET /health` (Root alias for AWS ALB, GCP Cloud Run, Kubernetes liveness/readiness probes)
-- `GET /api/health`
+1. **Zero Secret Leaks in Frontend**:
+   - Never put `DATABASE_URL`, `DIRECT_URL`, `SUPABASE_SERVICE_ROLE_KEY`, or `ADMIN_PASSWORD` in Vercel environment variables or frontend code.
+   - Frontend bundles only receive `VITE_*` public variables.
+2. **CORS Strict Policy**:
+   - Backend CORS strictly checks against `CORS_ORIGIN`.
+   - Wildcard `*` is prohibited when `credentials: true` is enabled.
+   - Unauthorized origins receive `HTTP 403 Forbidden` (`Origin not allowed by CORS policy`).
+3. **Admin Brute-Force Rate Limiting**:
+   - Admin authentication (`POST /api/admin/login`) enforces an in-memory failed attempt rate limiter.
+   - After 10 consecutive failed attempts, the IP is locked out with `HTTP 429 Too Many Requests`.
+   - Valid authentication clears the lockout counter.
+4. **Authoritative Answer & Clue Privacy**:
+   - Puzzle answers are never returned in public API payloads.
+   - Clue objects strictly omit coordinates, destination fields, internal object IDs, and database keys.
+   - The first clue for Level 1 is assigned and persisted server-side, delivered in `activeClue: { id, levelId, text }` immediately at session start.
+
+---
+
+## 6. Health Probes & Monitoring
+
+The backend exposes two machine-readable health probes:
+- `GET /health` (Root alias for cloud health probes / load balancers)
+- `GET /api/health` (Mounted under standard `/api` path)
 
 Response format:
 ```json
@@ -131,8 +169,8 @@ Response format:
   "success": true,
   "data": {
     "status": "ok",
-    "uptimeSeconds": 1420,
-    "timestamp": "2026-09-09T16:00:00.000Z",
+    "uptimeSeconds": 3600,
+    "timestamp": "2026-09-14T12:00:00.000Z",
     "env": "production",
     "database": {
       "connected": true,
@@ -141,48 +179,65 @@ Response format:
   }
 }
 ```
-
-If PostgreSQL is unreachable, the endpoint returns `HTTP 503 Service Unavailable` with `database: { connected: false, status: "disconnected" }`.
-
----
-
-## 6. Rollback & Disaster Recovery Runbook
-
-### Scenario 1: Reverting to a Previous Release Commit
-```bash
-cd /var/www/core-quest-finder
-
-# 1. Checkout target stable tag or commit
-git checkout v1.0.0-rc1
-
-# 2. Rebuild backend and frontend
-npm run build --prefix backend
-npm run build --prefix frontend
-
-# 3. Reload PM2 processes gracefully
-pm2 reload ecosystem.config.cjs --env production
-```
-
-### Scenario 2: Rollback with Database Migration Reversal
-```bash
-cd /var/www/core-quest-finder/backend
-
-# If a migration needs to be rolled back manually in PostgreSQL:
-# 1. Execute SQL rollback script on Supabase SQL editor
-# 2. Mark migration as rolled back in Prisma migration table:
-npx prisma migrate resolve --rolled-back "<MIGRATION_NAME>"
-```
-
-### Scenario 3: Emergency Process Restart
-```bash
-pm2 restart core-quest-backend
-pm2 restart core-quest-frontend
-```
+If PostgreSQL is unreachable, the endpoint returns `HTTP 503 Service Unavailable` with `database: { connected: false, status: "disconnected" }` without leaking SQL errors or connection strings.
 
 ---
 
-## 7. Operational Safety Rules
+## 7. Post-Deployment Verification Checklist
 
-1. **Client Bundles**: Production assets in `frontend/dist/client/assets/` must never contain puzzle answers (`keyboard`, `salt`, `159`, `443`, `FOUNDER`, etc.) or database connection strings.
-2. **Payload Limits**: The backend enforces a `100kb` limit on all inbound JSON request bodies to prevent Denial of Service.
-3. **Session Authority**: All progress, cumulative inventory collections, and speedrun scores are stored in PostgreSQL; browser cache clears or tab closures do not cause state loss.
+After deploying to Render and Vercel, verify the following in order:
+
+- [ ] **1. Backend Health**:
+  ```bash
+  curl -i https://your-backend.onrender.com/health
+  # Must return HTTP 200 with success: true and database: { connected: true }
+  ```
+- [ ] **2. Frontend Initial Clue Display**:
+  - Open `https://your-frontend.vercel.app/register`.
+  - Register a new player and start game.
+  - Verify Level 1 begins immediately with the first clue rendered in the bottom-left cyber HUD panel (`#hud-persistent-clue`) without needing to click "Hint" or "Investigate".
+- [ ] **3. Refresh & Reconnect Invariance**:
+  - Refresh the browser (`F5`).
+  - Verify the exact same clue sentence appears in the bottom-left HUD.
+- [ ] **4. Clue Investigation & Puzzle Solving**:
+  - Move to the clue target and click **Investigate**.
+  - Verify question is unlocked and solve it.
+  - Verify level progression advances to Level 2 and updates the clue.
+- [ ] **5. Admin Control Room**:
+  - Navigate to `https://your-frontend.vercel.app/admin`.
+  - Enter your `ADMIN_PASSWORD`.
+  - Verify live KPI stats, contestant table with `Game Time`, `Penalty Time`, and `Total Time` columns.
+- [ ] **6. Contestant Excel Export**:
+  - In Admin Control Room, click **Download Excel (.xlsx)**.
+  - Verify the 12-column spreadsheet downloads with bold headers, preserved leading zeros, and authoritative `Total Time`.
+- [ ] **7. Public Leaderboard**:
+  - Open `https://your-frontend.vercel.app/leaderboard`.
+  - Verify Top 5 Operative cards and leaderboard standings display with server-authoritative `Total Time` and zero private data leaks (no emails, phone numbers, or enrollment numbers).
+
+---
+
+## 8. Rollback Runbook
+
+### Scenario 1: Reverting Frontend (Vercel)
+1. Go to **Vercel Dashboard -> Project -> Deployments**.
+2. Locate the previous stable deployment.
+3. Click the **...** menu on that deployment and select **Instant Rollback**.
+4. Traffic is immediately redirected to the previous build with zero downtime.
+
+### Scenario 2: Reverting Backend (Render)
+1. Go to **Render Dashboard -> Web Service -> Deploys**.
+2. Find the previous stable build commit.
+3. Click **Rollback to this deploy**.
+4. Render immediately redeploys the selected artifact.
+
+### Scenario 3: Database Migration Issue (Non-Destructive)
+1. Inspect the migration status:
+   ```bash
+   npx prisma migrate status
+   ```
+2. If a migration needs adjustment, write a forward corrective migration (`prisma migrate dev` locally or apply an additive SQL patch on Supabase SQL Editor).
+3. If marking a migration rolled back in Prisma:
+   ```bash
+   npx prisma migrate resolve --rolled-back "<MIGRATION_NAME>"
+   ```
+4. **NEVER** run `prisma migrate reset`.
