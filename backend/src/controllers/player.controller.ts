@@ -3,7 +3,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { getServerLevelConfig } from "../config/levels";
 import { getQuestionById } from "../config/questionBank";
-import { getDefaultClueForLevel } from "../config/clueBank";
+import { getDefaultClueForLevel, repairOrValidateClue } from "../config/clueBank";
 import { normalizeProgressData } from "../lib/progress";
 import {
   ApiResponse,
@@ -124,7 +124,56 @@ export async function getPlayerById(
       })
       .filter((h): h is { order: number; text: string } => h !== null);
 
-    const activeClue = progressData.activeClue || getDefaultClueForLevel(player.currentLevel);
+    let activeClue = progressData.activeClue;
+    if (!progressData.assignedClueLocationId) {
+      const validated = repairOrValidateClue(
+        player.currentLevel,
+        progressData.assignedClueLocationId,
+        progressData.assignedClueSentenceId
+      );
+      progressData.assignedClueLocationId = validated.location.objectId;
+      progressData.assignedClueSentenceId = validated.sentence.id;
+      progressData.activeClue = validated.activeClue;
+      activeClue = validated.activeClue;
+
+      if (levelProgress) {
+        await prisma.levelProgress.update({
+          where: { id: levelProgress.id },
+          data: { progressData: progressData as any },
+        });
+      } else {
+        await prisma.levelProgress.create({
+          data: {
+            playerId: player.id,
+            levelId: player.currentLevel,
+            status: "IN_PROGRESS",
+            progressData: progressData as any,
+          },
+        });
+      }
+    } else {
+      const validated = repairOrValidateClue(
+        player.currentLevel,
+        progressData.assignedClueLocationId,
+        progressData.assignedClueSentenceId
+      );
+      activeClue = validated.activeClue;
+      if (
+        validated.location.objectId !== progressData.assignedClueLocationId ||
+        validated.sentence.id !== progressData.assignedClueSentenceId ||
+        !progressData.activeClue
+      ) {
+        progressData.assignedClueLocationId = validated.location.objectId;
+        progressData.assignedClueSentenceId = validated.sentence.id;
+        progressData.activeClue = validated.activeClue;
+        if (levelProgress) {
+          await prisma.levelProgress.update({
+            where: { id: levelProgress.id },
+            data: { progressData: progressData as any },
+          });
+        }
+      }
+    }
 
     const levelProgressDTO: LevelProgressDataDTO = {
       level: player.currentLevel,

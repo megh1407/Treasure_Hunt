@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import { prisma } from "../lib/prisma";
-import type { ApiResponse, LeaderboardEntryDTO, PlayerStatus } from "../types";
+import { calculateTotalTimeSeconds, formatDurationMMSS } from "../lib/time";
+import type { ApiResponse, LeaderboardEntryDTO, PlayerStatus, Top5PlayerDTO } from "../types";
 
 /**
  * Retrieves global game leaderboard with deterministic speedrun scoring.
@@ -52,7 +53,7 @@ export async function getLeaderboard(
       }
 
       const penaltySeconds = p.penaltySeconds ?? 0;
-      const finalTimeSeconds = gameTimeSeconds + penaltySeconds;
+      const finalTimeSeconds = calculateTotalTimeSeconds(gameTimeSeconds, penaltySeconds);
 
       const normalizedStatus = (
         p.status ? p.status.toLowerCase() : "not_started"
@@ -121,6 +122,7 @@ export async function getLeaderboard(
       gameTimeSeconds: r.gameTimeSeconds,
       penaltySeconds: r.penaltySeconds,
       finalTimeSeconds: r.finalTimeSeconds,
+      totalTime: formatDurationMMSS(r.finalTimeSeconds),
       location: r.location,
       status: r.status,
     }));
@@ -141,7 +143,7 @@ export async function getLeaderboard(
  */
 export async function getTop5Players(
   _req: Request,
-  res: Response<ApiResponse<{ playerName: string }[]>>,
+  res: Response<ApiResponse<Top5PlayerDTO[]>>,
   next: NextFunction
 ) {
   try {
@@ -173,7 +175,7 @@ export async function getTop5Players(
       }
 
       const penaltySeconds = p.penaltySeconds ?? 0;
-      const finalTimeSeconds = gameTimeSeconds + penaltySeconds;
+      const finalTimeSeconds = calculateTotalTimeSeconds(gameTimeSeconds, penaltySeconds);
 
       return {
         playerName: p.playerName,
@@ -210,10 +212,20 @@ export async function getTop5Players(
       return a.createdAt.getTime() - b.createdAt.getTime();
     });
 
-    // Expose ONLY playerName for the top 5
-    const top5 = rows.slice(0, 5).map((r) => ({
-      playerName: r.playerName,
-    }));
+    // Expose safe fields for the top 5 without leaking sensitive contestant information
+    const top5: Top5PlayerDTO[] = rows.slice(0, 5).map((r, idx) => {
+      const isCompleted = r.status === "COMPLETED";
+      return {
+        rank: idx + 1,
+        playerName: r.playerName,
+        levelsCompleted: isCompleted ? 10 : Math.max(0, r.currentLevel - 1),
+        status: isCompleted ? "Completed" : `Level ${r.currentLevel}`,
+        totalTime: isCompleted
+          ? formatDurationMMSS(r.finalTimeSeconds)
+          : (r.finalTimeSeconds > 0 ? formatDurationMMSS(r.finalTimeSeconds) : "—"),
+        totalTimeSeconds: r.finalTimeSeconds,
+      };
+    });
 
     res.status(200).json({
       success: true,

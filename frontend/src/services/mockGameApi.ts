@@ -17,6 +17,7 @@ import type {
   RegisterPayload,
   ScanResult,
   SessionPauseState,
+  Top5Player,
 } from "./types";
 
 const delay = (ms = 0) => (ms > 0 ? new Promise((r) => setTimeout(r, ms)) : Promise.resolve());
@@ -75,9 +76,16 @@ export class MockGameApi implements GameApi {
     return player;
   }
 
-  async getTop5Players(): Promise<{ playerName: string }[]> {
+  async getTop5Players(): Promise<Top5Player[]> {
     const list = await this.getLeaderboard();
-    return list.slice(0, 5).map((r) => ({ playerName: r.playerName }));
+    return list.slice(0, 5).map((r, idx) => ({
+      rank: idx + 1,
+      playerName: r.playerName,
+      levelsCompleted: r.level,
+      status: r.status,
+      totalTime: r.totalTime || "—",
+      totalTimeSeconds: r.finalTimeSeconds,
+    }));
   }
 
   async startSession(playerId: string) {
@@ -94,7 +102,12 @@ export class MockGameApi implements GameApi {
       totalPausedSeconds: 0,
       statusBeforePause: null,
     });
-    return { startTime, sessionId };
+    const currentLevel = p?.currentLevel ?? 1;
+    const initialClue = {
+      ...getLevel(currentLevel).clue,
+      destination: "",
+    };
+    return { startTime, sessionId, activeClue: initialClue };
   }
 
   async pauseSession(playerId: string, sessionId: string): Promise<SessionPauseState> {
@@ -359,6 +372,11 @@ export class MockGameApi implements GameApi {
     const progress = this.progress.get(playerId) ?? null;
     const sessionId = `mock_session_${player.id}`;
     const pauseData = this.sessionPauseStates.get(sessionId);
+    const currentLevel = player.currentLevel ?? 1;
+    const activeClue = progress?.activeClue ?? {
+      ...getLevel(currentLevel).clue,
+      destination: "",
+    };
     return {
       player,
       activeSession: player.startTime
@@ -372,7 +390,8 @@ export class MockGameApi implements GameApi {
             statusBeforePause: pauseData?.statusBeforePause ?? null,
           }
         : null,
-      levelProgress: progress,
+      levelProgress: progress ? { ...progress, activeClue } : null,
+      activeClue,
     };
   }
 }

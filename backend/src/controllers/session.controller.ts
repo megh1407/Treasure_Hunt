@@ -1,7 +1,8 @@
 import { Request, Response, NextFunction } from "express";
 import { prisma } from "../lib/prisma";
-import { getDefaultClueForLevel } from "../config/clueBank";
+import { getDefaultClueForLevel, selectClueForPlayer, repairOrValidateClue } from "../config/clueBank";
 import { normalizeProgressData } from "../lib/progress";
+import { calculateTotalTimeSeconds } from "../lib/time";
 import type {
   ApiResponse,
   CompleteSessionDTO,
@@ -48,7 +49,7 @@ export async function startSession(
       return;
     }
 
-    // 2. Ensure LevelProgress exists and has an activeClue
+    // 2. Ensure LevelProgress exists and has an authoritative assigned clue location & sentence
     let progress = await prisma.levelProgress.findFirst({
       where: {
         playerId: trimmedPlayerId,
@@ -57,10 +58,42 @@ export async function startSession(
     });
 
     const normalized = normalizeProgressData(progress?.progressData);
+    let assignedClueLocationId = normalized.assignedClueLocationId;
+    let assignedClueSentenceId = normalized.assignedClueSentenceId;
     let activeClue = normalized.activeClue;
 
-    if (!activeClue) {
-      activeClue = getDefaultClueForLevel(player.currentLevel);
+    if (!assignedClueLocationId) {
+      // Find occupied clue locations among other active players on this level
+      const otherActiveProgress = await prisma.levelProgress.findMany({
+        where: {
+          levelId: player.currentLevel,
+          status: "IN_PROGRESS",
+          playerId: { not: trimmedPlayerId },
+          player: {
+            status: { not: "COMPLETED" },
+            sessions: {
+              some: { isActive: true },
+            },
+          },
+        },
+        select: { progressData: true },
+      });
+
+      const occupiedLocationIds = new Set<string>();
+      for (const item of otherActiveProgress) {
+        const d = normalizeProgressData(item.progressData);
+        if (d.assignedClueLocationId) {
+          occupiedLocationIds.add(d.assignedClueLocationId);
+        }
+      }
+
+      const assigned = selectClueForPlayer(player.currentLevel, occupiedLocationIds);
+      assignedClueLocationId = assigned.location.objectId;
+      assignedClueSentenceId = assigned.sentence.id;
+      activeClue = assigned.activeClue;
+
+      normalized.assignedClueLocationId = assignedClueLocationId;
+      normalized.assignedClueSentenceId = assignedClueSentenceId;
       normalized.activeClue = activeClue;
 
       if (progress) {
@@ -77,6 +110,33 @@ export async function startSession(
             progressData: normalized as any,
           },
         });
+      }
+    } else {
+      // Verify integrity of existing assigned clue location and sentence
+      const validated = repairOrValidateClue(
+        player.currentLevel,
+        assignedClueLocationId,
+        assignedClueSentenceId
+      );
+      assignedClueLocationId = validated.location.objectId;
+      assignedClueSentenceId = validated.sentence.id;
+      activeClue = validated.activeClue;
+
+      if (
+        validated.location.objectId !== normalized.assignedClueLocationId ||
+        validated.sentence.id !== normalized.assignedClueSentenceId ||
+        !normalized.activeClue
+      ) {
+        normalized.assignedClueLocationId = assignedClueLocationId;
+        normalized.assignedClueSentenceId = assignedClueSentenceId;
+        normalized.activeClue = activeClue;
+
+        if (progress) {
+          await prisma.levelProgress.update({
+            where: { id: progress.id },
+            data: { progressData: normalized as any },
+          });
+        }
       }
     }
 
@@ -255,7 +315,7 @@ export async function completeSession(
     );
     const gameTimeSeconds = Math.max(0, totalElapsedSeconds - finalTotalPaused);
     const penaltySeconds = player.penaltySeconds ?? 0;
-    const finalTimeSeconds = gameTimeSeconds + penaltySeconds;
+    const finalTimeSeconds = calculateTotalTimeSeconds(gameTimeSeconds, penaltySeconds);
 
     // 7. Atomically complete the session and update the player
     const [updatedSession, updatedPlayer] = await prisma.$transaction([

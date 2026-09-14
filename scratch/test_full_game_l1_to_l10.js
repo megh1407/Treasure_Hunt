@@ -40,6 +40,26 @@ function assert(condition, message, extra = null) {
 }
 
 const { getQuestionById } = require("../backend/dist/config/questionBank");
+const { getLocationsForLevel } = require("../backend/dist/config/clueBank");
+
+async function findTargetAndDecoy(playerId, levelId) {
+  const locations = getLocationsForLevel(levelId);
+  let targetRes = null;
+  let decoyRes = null;
+  for (const loc of locations) {
+    const res = await request("/game/investigate", {
+      method: "POST",
+      body: JSON.stringify({ playerId, objectId: loc.objectId }),
+    });
+    if (res.data?.data?.outcome === "clue") {
+      targetRes = res;
+    } else if (res.data?.data?.outcome === "decoy" && !decoyRes) {
+      decoyRes = res;
+    }
+  }
+  return { targetRes, decoyRes };
+}
+
 const ANSWERS_BY_CHALLENGE = {
   // Legacy fallback answers
   "ch-1": "65",
@@ -118,12 +138,6 @@ async function runTest() {
 
   // 3. Level 1 - The Silent Archive (Library)
   console.log("\nStep 3: Level 1 - The Silent Archive (Library)");
-  const l1Decoy = await request("/game/investigate", {
-    method: "POST",
-    body: JSON.stringify({ playerId, objectId: "lib_shelf_a" }),
-  });
-  assert(l1Decoy.data.data.outcome === "decoy", "L1 decoy investigated");
-
   // Cross-level investigation rejection test
   const crossLevelTest = await request("/game/investigate", {
     method: "POST",
@@ -131,11 +145,10 @@ async function runTest() {
   });
   assert(crossLevelTest.status === 200 && crossLevelTest.data?.data?.outcome === "cross_level", "Cross-level object investigation returns 200 with cross_level outcome");
 
-  const l1Target = await request("/game/investigate", {
-    method: "POST",
-    body: JSON.stringify({ playerId, objectId: "lib_old_book" }),
-  });
-  assert(l1Target.data.data.outcome === "clue", "L1 target found");
+  const l1Results = await findTargetAndDecoy(playerId, 1);
+  assert(l1Results.decoyRes && l1Results.decoyRes.data?.data?.outcome === "decoy", "L1 decoy investigated");
+  const l1Target = l1Results.targetRes;
+  assert(l1Target && l1Target.data?.data?.outcome === "clue", "L1 target found");
   assert(l1Target.data.data.grantedItem === "usb_drive", "L1 granted usb_drive");
   const ch1Id = l1Target.data.data.challenge.id;
   assert(ch1Id.startsWith("ch-1"), "L1 challenge received");
@@ -151,17 +164,10 @@ async function runTest() {
 
   // 4. Level 2 - Servo Silence (Robotics Lab)
   console.log("\nStep 4: Level 2 - Servo Silence (Robotics Lab)");
-  const l2Decoy = await request("/game/investigate", {
-    method: "POST",
-    body: JSON.stringify({ playerId, objectId: "robot_workbench" }),
-  });
-  assert(l2Decoy.data.data.outcome === "decoy", "L2 decoy investigated");
-
-  const l2Target = await request("/game/investigate", {
-    method: "POST",
-    body: JSON.stringify({ playerId, objectId: "robot_toolbox" }),
-  });
-  assert(l2Target.data.data.outcome === "clue", "L2 target found");
+  const l2Results = await findTargetAndDecoy(playerId, 2);
+  assert(l2Results.decoyRes && l2Results.decoyRes.data?.data?.outcome === "decoy", "L2 decoy investigated");
+  const l2Target = l2Results.targetRes;
+  assert(l2Target && l2Target.data?.data?.outcome === "clue", "L2 target found");
   assert(l2Target.data.data.grantedItem === "access_card", "L2 granted access_card");
   const ch2Id = l2Target.data.data.challenge.id;
   assert(ch2Id.startsWith("ch-2"), "L2 challenge received");
@@ -175,11 +181,9 @@ async function runTest() {
 
   // 5. Level 3 - Cold Boot (Computer Lab)
   console.log("\nStep 5: Level 3 - Cold Boot (Computer Lab)");
-  const l3Target = await request("/game/investigate", {
-    method: "POST",
-    body: JSON.stringify({ playerId, objectId: "computer_server_rack" }),
-  });
-  assert(l3Target.data.data.outcome === "clue", "L3 target found");
+  const l3Results = await findTargetAndDecoy(playerId, 3);
+  const l3Target = l3Results.targetRes;
+  assert(l3Target && l3Target.data?.data?.outcome === "clue", "L3 target found");
   assert(l3Target.data.data.grantedItem === "encryption_key", "L3 granted encryption_key");
   const ch3Id = l3Target.data.data.challenge.id;
   assert(ch3Id.startsWith("ch-3"), "L3 challenge received");
@@ -212,11 +216,9 @@ async function runTest() {
 
   // 6. Level 4 - Row Seven (Auditorium)
   console.log("\nStep 6: Level 4 - Row Seven (Auditorium)");
-  const l4Target = await request("/game/investigate", {
-    method: "POST",
-    body: JSON.stringify({ playerId, objectId: "auditorium_seat_row7" }),
-  });
-  assert(l4Target.data.data.outcome === "clue", "L4 target found");
+  const l4Results = await findTargetAndDecoy(playerId, 4);
+  const l4Target = l4Results.targetRes;
+  assert(l4Target && l4Target.data?.data?.outcome === "clue", "L4 target found");
   assert(l4Target.data.data.grantedItem === "circuit_piece", "L4 granted circuit_piece");
   const ch4Id = l4Target.data.data.challenge.id;
   assert(ch4Id.startsWith("ch-4"), "L4 challenge received");
@@ -230,11 +232,9 @@ async function runTest() {
 
   // 7. Level 5 - Hidden Recipe (Cafeteria)
   console.log("\nStep 7: Level 5 - Hidden Recipe (Cafeteria)");
-  const l5Target = await request("/game/investigate", {
-    method: "POST",
-    body: JSON.stringify({ playerId, objectId: "cafe_corner_table" }),
-  });
-  assert(l5Target.data.data.outcome === "clue", "L5 target found");
+  const l5Results = await findTargetAndDecoy(playerId, 5);
+  const l5Target = l5Results.targetRes;
+  assert(l5Target && l5Target.data?.data?.outcome === "clue", "L5 target found");
   assert(l5Target.data.data.grantedItem === "secret_note", "L5 granted secret_note");
   const ch5Id = l5Target.data.data.challenge.id;
   assert(ch5Id.startsWith("ch-5"), "L5 challenge received");
@@ -248,17 +248,10 @@ async function runTest() {
 
   // 8. Level 6 - Locker 404 (Main Academic Building)
   console.log("\nStep 8: Level 6 - Locker 404 (Main Academic Building)");
-  const l6Decoy = await request("/game/investigate", {
-    method: "POST",
-    body: JSON.stringify({ playerId, objectId: "main_trophy_case" }),
-  });
-  assert(l6Decoy.data?.data?.outcome === "decoy", "L6 decoy investigated");
-
-  const l6Target = await request("/game/investigate", {
-    method: "POST",
-    body: JSON.stringify({ playerId, objectId: "main_locker_404" }),
-  });
-  assert(l6Target.data?.data?.outcome === "clue", "L6 target found");
+  const l6Results = await findTargetAndDecoy(playerId, 6);
+  assert(l6Results.decoyRes && l6Results.decoyRes.data?.data?.outcome === "decoy", "L6 decoy investigated");
+  const l6Target = l6Results.targetRes;
+  assert(l6Target && l6Target.data?.data?.outcome === "clue", "L6 target found");
   assert(l6Target.data?.data?.grantedItem === "blue_key", "L6 granted blue_key");
   const ch6Id = l6Target.data?.data?.challenge?.id;
   assert(ch6Id.startsWith("ch-6"), "L6 challenge received");
@@ -288,17 +281,10 @@ async function runTest() {
 
   // 9. Level 7 - Broken Trace (Electronics Lab)
   console.log("\nStep 9: Level 7 - Broken Trace (Electronics Lab)");
-  const l7Decoy = await request("/game/investigate", {
-    method: "POST",
-    body: JSON.stringify({ playerId, objectId: "electronics_soldering_station" }),
-  });
-  assert(l7Decoy.data.data.outcome === "decoy", "L7 decoy investigated");
-
-  const l7Target = await request("/game/investigate", {
-    method: "POST",
-    body: JSON.stringify({ playerId, objectId: "electronics_oscilloscope" }),
-  });
-  assert(l7Target.data.data.outcome === "clue", "L7 target found");
+  const l7Results = await findTargetAndDecoy(playerId, 7);
+  assert(l7Results.decoyRes && l7Results.decoyRes.data?.data?.outcome === "decoy", "L7 decoy investigated");
+  const l7Target = l7Results.targetRes;
+  assert(l7Target && l7Target.data?.data?.outcome === "clue", "L7 target found");
   assert(l7Target.data.data.grantedItem === "logic_probe", "L7 granted logic_probe");
   const ch7Id = l7Target.data.data.challenge.id;
   assert(ch7Id.startsWith("ch-7"), "L7 challenge received");
@@ -322,11 +308,9 @@ async function runTest() {
 
   // 11. Level 8 - Buried Marker (Garden Pavilion)
   console.log("\nStep 11: Level 8 - Buried Marker (Garden Pavilion)");
-  const l8Target = await request("/game/investigate", {
-    method: "POST",
-    body: JSON.stringify({ playerId, objectId: "garden_stone_marker" }),
-  });
-  assert(l8Target.data.data.outcome === "clue", "L8 target found");
+  const l8Results = await findTargetAndDecoy(playerId, 8);
+  const l8Target = l8Results.targetRes;
+  assert(l8Target && l8Target.data?.data?.outcome === "clue", "L8 target found");
   assert(l8Target.data.data.grantedItem === "survey_marker", "L8 granted survey_marker");
   const ch8Id = l8Target.data.data.challenge.id;
   assert(ch8Id.startsWith("ch-8"), "L8 challenge received");
@@ -340,11 +324,9 @@ async function runTest() {
 
   // 12. Level 9 - Root Access (Server Room)
   console.log("\nStep 12: Level 9 - Root Access (Server Room)");
-  const l9Target = await request("/game/investigate", {
-    method: "POST",
-    body: JSON.stringify({ playerId, objectId: "server_mainframe_console" }),
-  });
-  assert(l9Target.data.data.outcome === "clue", "L9 target found");
+  const l9Results = await findTargetAndDecoy(playerId, 9);
+  const l9Target = l9Results.targetRes;
+  assert(l9Target && l9Target.data?.data?.outcome === "clue", "L9 target found");
   assert(l9Target.data.data.grantedItem === "admin_override", "L9 granted admin_override");
   const ch9Id = l9Target.data.data.challenge.id;
   assert(ch9Id.startsWith("ch-9"), "L9 challenge received");
@@ -358,17 +340,10 @@ async function runTest() {
 
   // 13. Level 10 - CORE-X (Innovation Vault - The Final Quest)
   console.log("\nStep 13: Level 10 - CORE-X (Innovation Vault)");
-  const l10Decoy = await request("/game/investigate", {
-    method: "POST",
-    body: JSON.stringify({ playerId, objectId: "vault_security_terminal" }),
-  });
-  assert(l10Decoy.data?.data?.outcome === "decoy", "L10 decoy investigated", l10Decoy);
-
-  const l10Target = await request("/game/investigate", {
-    method: "POST",
-    body: JSON.stringify({ playerId, objectId: "vault_containment_pod" }),
-  });
-  assert(l10Target.data?.data?.outcome === "clue", "L10 target found", l10Target);
+  const l10Results = await findTargetAndDecoy(playerId, 10);
+  assert(l10Results.decoyRes && l10Results.decoyRes.data?.data?.outcome === "decoy", "L10 decoy investigated");
+  const l10Target = l10Results.targetRes;
+  assert(l10Target && l10Target.data?.data?.outcome === "clue", "L10 target found");
   assert(l10Target.data.data.grantedItem === "core_x_prototype", "L10 granted core_x_prototype");
   const ch10Id = l10Target.data.data.challenge.id;
   assert(ch10Id.startsWith("ch-10"), "L10 challenge received");

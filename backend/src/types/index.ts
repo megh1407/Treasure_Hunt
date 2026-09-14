@@ -76,6 +76,9 @@ export interface AdminStatsDTO {
   totalPlayers: number;
   currentlyPlaying: number;
   completedAllLevels: number;
+  gameTimeSeconds?: number;
+  penaltySeconds?: number;
+  totalTimeSeconds?: number;
 }
 
 export interface AdminLeaderboardEntryDTO {
@@ -97,7 +100,12 @@ export interface AdminLeaderboardEntryDTO {
 }
 
 export interface Top5PlayerDTO {
+  rank?: number;
   playerName: string;
+  levelsCompleted?: number;
+  status?: string;
+  totalTime?: string;
+  totalTimeSeconds?: number;
 }
 
 /** Response payload for GET /api/health */
@@ -284,6 +292,7 @@ export interface LeaderboardEntryDTO {
   gameTimeSeconds: number;
   penaltySeconds: number;
   finalTimeSeconds: number;
+  totalTime?: string;
   location: string;
   status: PlayerStatus;
 }

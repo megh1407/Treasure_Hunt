@@ -132,11 +132,26 @@ async function run() {
   const p2 = await registerTestPlayer("Operative Two");
   const p3 = await registerTestPlayer("Operative Three");
 
-  // Operative 1 investigates clue target (lib_old_book) in Level 1
-  const inv1 = await request("/game/investigate", {
-    method: "POST",
-    body: JSON.stringify({ playerId: p1.playerId, objectId: "lib_old_book" }),
-  });
+  const level1Objects = [
+    "lib_old_book", "lib_shelf_a", "lib_shelf_b", "lib_computer",
+    "lib_chair", "lib_cabinet", "lib_painting", "lib_noticeboard", "lib_box"
+  ];
+
+  async function findAndInvestigateTarget(playerId) {
+    for (const objId of level1Objects) {
+      const inv = await request("/game/investigate", {
+        method: "POST",
+        body: JSON.stringify({ playerId, objectId: objId }),
+      });
+      if (inv.data?.data?.outcome === "clue") {
+        return { inv, objId };
+      }
+    }
+    throw new Error(`Target object not found for player ${playerId}`);
+  }
+
+  // Operative 1 investigates assigned clue target in Level 1
+  const { inv: inv1, objId: p1TargetObj } = await findAndInvestigateTarget(p1.playerId);
   assert(inv1.status === 200, "Operative 1 investigated clue target");
   assert(inv1.data?.data?.outcome === "clue", "Outcome is clue", inv1.data);
   const q1Id = inv1.data.data.challenge.id;
@@ -144,10 +159,7 @@ async function run() {
   assert(!inv1.data.data.challenge.answer, "Security: answer is NOT leaked to Operative 1");
 
   // Operative 2 investigates clue target while Operative 1 is actively on Level 1
-  const inv2 = await request("/game/investigate", {
-    method: "POST",
-    body: JSON.stringify({ playerId: p2.playerId, objectId: "lib_old_book" }),
-  });
+  const { inv: inv2 } = await findAndInvestigateTarget(p2.playerId);
   assert(inv2.status === 200, "Operative 2 investigated clue target");
   assert(inv2.data?.data?.outcome === "clue", "Outcome is clue", inv2.data);
   const q2Id = inv2.data.data.challenge.id;
@@ -155,10 +167,7 @@ async function run() {
   assert(q2Id !== q1Id, `Concurrent occupancy avoided: Operative 2 received '${q2Id}' != Operative 1 '${q1Id}'`);
 
   // Operative 3 investigates clue target while Operatives 1 and 2 are actively on Level 1
-  const inv3 = await request("/game/investigate", {
-    method: "POST",
-    body: JSON.stringify({ playerId: p3.playerId, objectId: "lib_old_book" }),
-  });
+  const { inv: inv3 } = await findAndInvestigateTarget(p3.playerId);
   assert(inv3.status === 200, "Operative 3 investigated clue target");
   assert(inv3.data?.data?.outcome === "clue", "Outcome is clue", inv3.data);
   const q3Id = inv3.data.data.challenge.id;
@@ -173,7 +182,7 @@ async function run() {
   // Re-investigating target object must return the EXACT same assigned question
   const reInv1 = await request("/game/investigate", {
     method: "POST",
-    body: JSON.stringify({ playerId: p1.playerId, objectId: "lib_old_book" }),
+    body: JSON.stringify({ playerId: p1.playerId, objectId: p1TargetObj }),
   });
   assert(reInv1.status === 200, "Operative 1 re-investigated target object");
   assert(reInv1.data.data.challenge.id === q1Id, `Re-investigation preserved exact question: '${q1Id}'`);

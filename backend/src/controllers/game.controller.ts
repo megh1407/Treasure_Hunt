@@ -3,7 +3,8 @@ import { prisma } from "../lib/prisma";
 import { getServerLevelConfig, isObjectInLevel, getDecoyInLevel } from "../config/levels";
 import { normalizeProgressData } from "../lib/progress";
 import { getQuestionById, selectQuestionForPlayer, isAnswerCorrect } from "../config/questionBank";
-import { getNextClueForCompletedLevel, getDefaultClueForLevel } from "../config/clueBank";
+import { getNextClueForCompletedLevel, getDefaultClueForLevel, selectClueForPlayer, repairOrValidateClue } from "../config/clueBank";
+import { calculateTotalTimeSeconds } from "../lib/time";
 import type {
   ApiResponse,
   InvestigateDTO,
@@ -156,8 +157,22 @@ export async function investigateObject(
     const currentData = normalizeProgressData(existingProgress?.progressData);
     const startedAt = existingProgress?.startedAt ?? new Date();
 
-    // 8. Check if object is the clue target
-    if (trimmedObjectId === levelConfig.targetObjectId) {
+    // 8. Determine player's authoritative assigned clue target object for this level
+    let assignedLocationId = currentData.assignedClueLocationId;
+    let assignedSentenceId = currentData.assignedClueSentenceId;
+    let activeClue = currentData.activeClue;
+
+    if (!assignedLocationId || !activeClue) {
+      const validated = repairOrValidateClue(currentLevel, assignedLocationId, assignedSentenceId);
+      assignedLocationId = validated.location.objectId;
+      assignedSentenceId = validated.sentence.id;
+      activeClue = validated.activeClue;
+    }
+
+    const playerTargetObjectId = assignedLocationId || levelConfig.targetObjectId;
+
+    // Check if object is the player's clue target
+    if (trimmedObjectId === playerTargetObjectId) {
       // Execute question assignment and progress update atomically inside a transaction
       const assignedQuestion = await prisma.$transaction(async (tx) => {
         // 1. Re-read the latest level progress for this player inside the transaction
@@ -217,14 +232,16 @@ export async function investigateObject(
           selectedQ = selectQuestionForPlayer(currentLevel, occupiedIds);
         }
 
-        const activeClue = progressData.activeClue || getDefaultClueForLevel(currentLevel);
+        const currentActiveClue = progressData.activeClue || activeClue || getDefaultClueForLevel(currentLevel);
 
         const updatedData = {
           ...progressData,
           investigatedObjects,
           collectedItems,
           assignedQuestionId: selectedQ.id,
-          activeClue,
+          assignedClueLocationId: assignedLocationId,
+          assignedClueSentenceId: assignedSentenceId,
+          activeClue: currentActiveClue,
         };
 
         // Atomically update LevelProgress and set Player status to SOLVING
@@ -249,32 +266,24 @@ export async function investigateObject(
           },
         });
 
+        // 4. Transition Player status to SOLVING (locking in active question)
         await tx.player.update({
           where: { id: trimmedPlayerId },
-          data: { status: "SOLVING" },
+          data: {
+            status: "SOLVING",
+          },
         });
 
         return selectedQ;
       });
 
-      const clueMessage =
-        currentLevel === 1
-          ? "A hollowed-out volume. Inside: a folded strip of paper with an encrypted trace."
-          : currentLevel === 2
-          ? "A metallic tray beneath heavy tools. Inside: the second encrypted trace and an Access Card."
-          : currentLevel === 3
-          ? "The main server enclosure hums quietly. Behind the ventilation panel: an Encryption Key and the third encrypted trace."
-          : currentLevel === 4
-          ? "Underneath the armrest of seat 7F: an engraved circuit piece and the fourth encrypted trace."
-          : currentLevel === 5
-          ? "Taped underneath the corner table: a folded recipe card concealing a handwritten secret note and the fifth encrypted trace."
-          : `Encrypted trace discovered in ${levelConfig.targetObjectDisplayName}.`;
+      const clueMessage = `Encrypted trace discovered at ${trimmedObjectId}.`;
 
       // Return challenge WITHOUT the clue (clue is unlocked only upon solving challenge)
       res.status(200).json({
         success: true,
         data: {
-          objectId: levelConfig.targetObjectId,
+          objectId: trimmedObjectId,
           outcome: "clue",
           message: clueMessage,
           challenge: {
@@ -295,6 +304,9 @@ export async function investigateObject(
     );
     const updatedData = {
       ...currentData,
+      assignedClueLocationId: assignedLocationId,
+      assignedClueSentenceId: assignedSentenceId,
+      activeClue,
       investigatedObjects,
     };
 
@@ -318,7 +330,11 @@ export async function investigateObject(
     });
 
     const decoy = getDecoyInLevel(currentLevel, trimmedObjectId);
-    const decoyMessage = decoy?.message || "Nothing useful was found.";
+    const decoyMessage =
+      decoy?.message ||
+      (trimmedObjectId === levelConfig.targetObjectId
+        ? "A familiar object, but no encrypted trace is concealed here today."
+        : "Nothing useful was found.");
 
     res.status(200).json({
       success: true,
@@ -615,7 +631,10 @@ export async function submitAnswer(
             Math.floor((endedAt.getTime() - activeSession.startedAt.getTime()) / 1000)
           );
           const gameTimeSeconds = Math.max(0, totalElapsedSeconds - finalTotalPaused);
-          const finalTimeSeconds = gameTimeSeconds + (freshPlayer.penaltySeconds ?? 0);
+          const finalTimeSeconds = calculateTotalTimeSeconds(
+            gameTimeSeconds,
+            freshPlayer.penaltySeconds ?? 0
+          );
 
           await Promise.all([
             tx.levelProgress.update({
@@ -663,6 +682,47 @@ export async function submitAnswer(
 
         const nextLevel = currentLevel + 1;
 
+        // Inspect locations occupied by other active, non-completed players at nextLevel
+        const otherActiveNextLevel = await tx.levelProgress.findMany({
+          where: {
+            levelId: nextLevel,
+            status: "IN_PROGRESS",
+            playerId: { not: trimmedPlayerId },
+            player: {
+              status: { not: "COMPLETED" },
+              sessions: {
+                some: { isActive: true },
+              },
+            },
+          },
+          select: {
+            progressData: true,
+          },
+        });
+
+        const occupiedLocationIdsAtNextLevel = new Set<string>();
+        for (const item of otherActiveNextLevel) {
+          const data = normalizeProgressData(item.progressData);
+          if (data.assignedClueLocationId) {
+            occupiedLocationIdsAtNextLevel.add(data.assignedClueLocationId);
+          }
+        }
+
+        const nextClueAssignment = selectClueForPlayer(
+          nextLevel,
+          occupiedLocationIdsAtNextLevel
+        );
+
+        const nextProgressData = {
+          investigatedObjects: [],
+          collectedItems: [],
+          usedHints: [],
+          attempts: 0,
+          assignedClueLocationId: nextClueAssignment.location.objectId,
+          assignedClueSentenceId: nextClueAssignment.sentence.id,
+          activeClue: nextClueAssignment.activeClue,
+        };
+
         await Promise.all([
           tx.levelProgress.update({
             where: {
@@ -695,22 +755,10 @@ export async function submitAnswer(
               playerId: trimmedPlayerId,
               levelId: nextLevel,
               status: "IN_PROGRESS",
-              progressData: {
-                investigatedObjects: [],
-                collectedItems: [],
-                usedHints: [],
-                attempts: 0,
-                activeClue: awardedClue || undefined,
-              } as any,
+              progressData: nextProgressData as any,
             },
             update: {
-              progressData: {
-                investigatedObjects: [],
-                collectedItems: [],
-                usedHints: [],
-                attempts: 0,
-                activeClue: awardedClue || undefined,
-              } as any,
+              progressData: nextProgressData as any,
             },
           }),
         ]);
@@ -720,7 +768,7 @@ export async function submitAnswer(
           penaltySeconds: 0,
           levelCompleted: true,
           nextLevel,
-          nextClue: awardedClue || undefined,
+          nextClue: nextClueAssignment.activeClue,
           message: "Trace decrypted. Level complete.",
         };
       },

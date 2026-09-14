@@ -6,6 +6,7 @@ import { activeAdminTokens } from "../middleware/admin.middleware";
 import { getQuestionBankSummary } from "../config/questionBank";
 import { validateCluesNoLeakage } from "../config/clueBank";
 import ExcelJS from "exceljs";
+import { calculateTotalTimeSeconds } from "../lib/time";
 import type {
   ApiResponse,
   AdminLoginDTO,
@@ -100,7 +101,7 @@ export async function getAdminStats(
   next: NextFunction
 ) {
   try {
-    const [totalPlayers, currentlyPlaying, completedAllLevels] = await Promise.all([
+    const [totalPlayers, currentlyPlaying, completedAllLevels, timeAgg] = await Promise.all([
       prisma.player.count(),
       prisma.gameSession.count({
         where: {
@@ -115,7 +116,17 @@ export async function getAdminStats(
           status: "COMPLETED",
         },
       }),
+      prisma.player.aggregate({
+        _sum: {
+          gameTimeSeconds: true,
+          penaltySeconds: true,
+        },
+      }),
     ]);
+
+    const gameTimeSeconds = timeAgg._sum.gameTimeSeconds ?? 0;
+    const penaltySeconds = timeAgg._sum.penaltySeconds ?? 0;
+    const totalTimeSeconds = calculateTotalTimeSeconds(gameTimeSeconds, penaltySeconds);
 
     res.status(200).json({
       success: true,
@@ -123,6 +134,9 @@ export async function getAdminStats(
         totalPlayers,
         currentlyPlaying,
         completedAllLevels,
+        gameTimeSeconds,
+        penaltySeconds,
+        totalTimeSeconds,
       },
     });
   } catch (error) {
@@ -172,7 +186,7 @@ export async function getAdminLeaderboard(
       }
 
       const penaltySeconds = p.penaltySeconds ?? 0;
-      const finalTimeSeconds = gameTimeSeconds + penaltySeconds;
+      const finalTimeSeconds = calculateTotalTimeSeconds(gameTimeSeconds, penaltySeconds);
 
       return {
         playerId: p.id,
@@ -357,7 +371,7 @@ export async function searchPlayers(
       }
 
       const penaltySeconds = p.penaltySeconds ?? 0;
-      const finalTimeSeconds = gameTimeSeconds + penaltySeconds;
+      const finalTimeSeconds = calculateTotalTimeSeconds(gameTimeSeconds, penaltySeconds);
 
       return {
         playerId: p.id,
@@ -467,7 +481,7 @@ export async function exportContestantsExcel(
       }
 
       const penaltySeconds = p.penaltySeconds ?? 0;
-      const finalTimeSeconds = gameTimeSeconds + penaltySeconds;
+      const finalTimeSeconds = calculateTotalTimeSeconds(gameTimeSeconds, penaltySeconds);
 
       return {
         playerId: p.id,

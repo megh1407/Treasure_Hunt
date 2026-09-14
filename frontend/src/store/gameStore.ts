@@ -224,6 +224,7 @@ export const useGameStore = create<GameState>((set, get) => ({
         if (recovered && recovered.player) {
           const { player, activeSession, levelProgress } = recovered;
           const isCompleted = player.status === "completed";
+          const lvl = getLevel(player.currentLevel);
 
           let activeSessionId = !isCompleted && activeSession?.isActive ? activeSession.id : null;
           let sessionStartTime = !isCompleted && activeSession?.isActive ? (activeSession.startTime ?? null) : null;
@@ -233,11 +234,25 @@ export const useGameStore = create<GameState>((set, get) => ({
             !isCompleted && activeSession?.totalPausedSeconds ? activeSession.totalPausedSeconds : 0;
 
           // CRITICAL: If player exists BUT has no active session (and not completed), start a valid session now!
+          let initialClueFromStart: Clue | undefined = undefined;
           if (!isCompleted && !activeSessionId) {
             try {
               const sessionResult = await api.startSession(player.id);
               activeSessionId = sessionResult.sessionId ?? `session_${Date.now()}`;
               sessionStartTime = sessionResult.startTime ?? Date.now();
+              if (sessionResult.activeClue) {
+                initialClueFromStart = {
+                  id: sessionResult.activeClue.id,
+                  levelId: sessionResult.activeClue.levelId,
+                  text: sessionResult.activeClue.text,
+                  destination: "",
+                  building: lvl.clue.building,
+                  room: lvl.clue.room,
+                  objectId: lvl.clue.objectId,
+                  requiredItem: null,
+                  nextLevel: lvl.clue.nextLevel,
+                };
+              }
               isPaused = false;
               pausedAt = null;
               totalPausedSeconds = 0;
@@ -268,7 +283,6 @@ export const useGameStore = create<GameState>((set, get) => ({
           const usedHints = levelProgress?.usedHints ?? [];
           const attempts = levelProgress?.attempts ?? 0;
 
-          const lvl = getLevel(player.currentLevel);
           let revealedHints: { order: number; text: string }[] = [];
           if (levelProgress?.revealedHints && levelProgress.revealedHints.length > 0) {
             revealedHints = levelProgress.revealedHints;
@@ -285,18 +299,42 @@ export const useGameStore = create<GameState>((set, get) => ({
           let discoveredClue: Clue | null = null;
           let activeChallenge: Omit<Challenge, "answer"> | null = null;
           const targetObjId = lvl.clue.objectId;
-          if (!isCompleted && (isSolving || (targetObjId && investigated.includes(targetObjId)))) {
-            discoveredClue = lvl.clue;
-            const { answer: _answer, ...safeChallenge } = lvl.challenge;
-            activeChallenge = safeChallenge;
-          } else if (!isCompleted && player.currentLevel > 1) {
-            // When player has advanced beyond level 1, the active clue guiding them
-            // is the trace unlocked upon clearing the previous level.
-            const prevLvl = getLevel(player.currentLevel - 1);
-            discoveredClue = {
-              ...prevLvl.clue,
-              destination: "",
-            };
+          if (!isCompleted) {
+            if (isSolving || (targetObjId && investigated.includes(targetObjId))) {
+              if (levelProgress?.assignedQuestion) {
+                activeChallenge = levelProgress.assignedQuestion;
+              } else {
+                const { answer: _answer, ...safeChallenge } = lvl.challenge;
+                activeChallenge = safeChallenge;
+              }
+            } else {
+              // Active searching state: The server-authoritative clue for this level MUST be displayed by default!
+              const serverClue = recovered.activeClue || levelProgress?.activeClue || initialClueFromStart;
+              if (serverClue) {
+                discoveredClue = {
+                  id: serverClue.id,
+                  levelId: serverClue.levelId,
+                  text: serverClue.text,
+                  destination: "",
+                  building: lvl.clue.building,
+                  room: lvl.clue.room,
+                  objectId: lvl.clue.objectId,
+                  requiredItem: null,
+                  nextLevel: lvl.clue.nextLevel,
+                };
+              } else if (player.currentLevel > 1) {
+                const prevLvl = getLevel(player.currentLevel - 1);
+                discoveredClue = {
+                  ...prevLvl.clue,
+                  destination: "",
+                };
+              } else {
+                discoveredClue = {
+                  ...lvl.clue,
+                  destination: "",
+                };
+              }
+            }
           }
 
           const activeLevelScene = getSceneForLevel(player.currentLevel);
@@ -449,6 +487,22 @@ export const useGameStore = create<GameState>((set, get) => ({
         const sessionResult = await api.startSession(player.id);
         const startTime = sessionResult?.startTime ?? Date.now();
         const sessionId = sessionResult?.sessionId ?? `session_${Date.now()}`;
+        const initialClue: Clue = sessionResult?.activeClue
+          ? {
+              id: sessionResult.activeClue.id,
+              levelId: sessionResult.activeClue.levelId,
+              text: sessionResult.activeClue.text,
+              destination: "",
+              building: getLevel(1).clue.building,
+              room: getLevel(1).clue.room,
+              objectId: getLevel(1).clue.objectId,
+              requiredItem: null,
+              nextLevel: getLevel(1).clue.nextLevel,
+            }
+          : {
+              ...getLevel(1).clue,
+              destination: "",
+            };
 
         set({
           player,
@@ -461,6 +515,7 @@ export const useGameStore = create<GameState>((set, get) => ({
           status: "searching",
           scene: "campus",
           elapsedSeconds: 0,
+          discoveredClue: initialClue, // DEFAULT FIRST CLUE FOR LEVEL 1 IS DISPLAYED IMMEDIATELY!
           isHydrating: false,
           hasHydrated: true,
           isInitializing: false,

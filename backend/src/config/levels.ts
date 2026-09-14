@@ -133,15 +133,19 @@ export function getServerLevelConfig(levelId: number): ServerLevelConfig | null 
   return LEVELS_REGISTRY[levelId] || null;
 }
 
+import { getLocationsForLevel } from "./clueBank";
+
 /**
  * Determines whether a given objectId belongs to the specified level
- * (either as the target clue object or as one of the level's decoys).
+ * (either as the target clue object or as one of the level's decoys/clue locations).
  */
 export function isObjectInLevel(levelId: number, objectId: string): boolean {
   const config = getServerLevelConfig(levelId);
   if (!config) return false;
   if (config.targetObjectId === objectId) return true;
-  return config.decoys.some((d) => d.id === objectId);
+  if (config.decoys && config.decoys.some((d) => d.id === objectId)) return true;
+  const clueLocations = getLocationsForLevel(levelId);
+  return clueLocations.some((loc) => loc.objectId === objectId);
 }
 
 /**
@@ -150,5 +154,16 @@ export function isObjectInLevel(levelId: number, objectId: string): boolean {
 export function getDecoyInLevel(levelId: number, objectId: string): DecoyObjectConfig | undefined {
   const config = getServerLevelConfig(levelId);
   if (!config) return undefined;
-  return config.decoys.find((d) => d.id === objectId);
+  const configuredDecoy = config.decoys?.find((d) => d.id === objectId);
+  if (configuredDecoy) return configuredDecoy;
+  const clueLocations = getLocationsForLevel(levelId);
+  const loc = clueLocations.find((l) => l.objectId === objectId);
+  if (loc) {
+    return {
+      id: loc.objectId,
+      label: loc.label,
+      message: `You examine the ${loc.label}. Nothing useful was found here.`,
+    };
+  }
+  return undefined;
 }

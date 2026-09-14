@@ -35,6 +35,9 @@ export interface AdminStats {
   totalPlayers: number;
   currentlyPlaying: number;
   completedAllLevels: number;
+  gameTimeSeconds?: number | undefined;
+  penaltySeconds?: number | undefined;
+  totalTimeSeconds?: number | undefined;
 }
 
 export interface AdminLeaderboardEntry {
@@ -56,7 +59,12 @@ export interface AdminLeaderboardEntry {
 }
 
 export interface Top5Player {
+  rank?: number | undefined;
   playerName: string;
+  levelsCompleted?: number | undefined;
+  status?: string | undefined;
+  totalTime?: string | undefined;
+  totalTimeSeconds?: number | undefined;
 }
 
 export interface InteractionResult {

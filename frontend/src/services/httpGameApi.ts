@@ -677,8 +677,15 @@ export class HttpGameApi implements GameApi {
    * Retrieves safe player-facing top 5 standings.
    */
   async getTop5Players(): Promise<Top5Player[]> {
-    const data = await this.request<{ playerName: string }[]>("/leaderboard/top5");
-    return data.map((d) => ({ playerName: d.playerName }));
+    const data = await this.request<Top5Player[]>("/leaderboard/top5");
+    return data.map((d, idx) => ({
+      rank: d.rank ?? idx + 1,
+      playerName: d.playerName,
+      levelsCompleted: d.levelsCompleted,
+      status: d.status,
+      totalTime: d.totalTime,
+      totalTimeSeconds: d.totalTimeSeconds,
+    }));
   }
 
   /**

@@ -108,11 +108,26 @@ async function runTests() {
   console.log("\n--- TEST CASES 1, 2, 7, 8, 9, 10: Player Alpha Question Validation ---");
   const playerAlphaId = await createPlayerWithSession("AlphaOp");
 
+  const level1Objects = [
+    "lib_old_book", "lib_shelf_a", "lib_shelf_b", "lib_computer",
+    "lib_chair", "lib_cabinet", "lib_painting", "lib_noticeboard", "lib_box"
+  ];
+
+  async function findAndInvestigateTarget(playerId) {
+    for (const objId of level1Objects) {
+      const inv = await request("/game/investigate", {
+        method: "POST",
+        body: JSON.stringify({ playerId, objectId: objId }),
+      });
+      if (inv.data?.data?.outcome === "clue") {
+        return inv;
+      }
+    }
+    throw new Error(`Target object not found for player ${playerId}`);
+  }
+
   // Player Alpha investigates clue object to receive randomly assigned question
-  const alphaInvestigate = await request("/game/investigate", {
-    method: "POST",
-    body: JSON.stringify({ playerId: playerAlphaId, objectId: "lib_old_book" }),
-  });
+  const alphaInvestigate = await findAndInvestigateTarget(playerAlphaId);
   assert(alphaInvestigate.status === 200, "Alpha investigated clue target", alphaInvestigate);
   const alphaChallenge = alphaInvestigate.data.data.challenge;
   assert(!!alphaChallenge && !!alphaChallenge.id, `Alpha assigned challenge: ${alphaChallenge.id}`);
@@ -232,10 +247,7 @@ async function runTests() {
   let betaChallenge;
   for (let attempt = 0; attempt < 10; attempt++) {
     const candidateId = await createPlayerWithSession("BetaOp");
-    const invRes = await request("/game/investigate", {
-      method: "POST",
-      body: JSON.stringify({ playerId: candidateId, objectId: "lib_old_book" }),
-    });
+    const invRes = await findAndInvestigateTarget(candidateId);
     const ch = invRes.data?.data?.challenge;
     if (ch && ch.id !== alphaChallenge.id) {
       betaPlayerId = candidateId;
@@ -290,10 +302,7 @@ async function runTests() {
   console.log("\n--- TEST CASE 5: Same answer text cross-question test ---");
   // If a player is assigned a question, submitting an answer belonging to another question must be rejected!
   const gammaPlayerId = await createPlayerWithSession("GammaOp");
-  const gammaInv = await request("/game/investigate", {
-    method: "POST",
-    body: JSON.stringify({ playerId: gammaPlayerId, objectId: "lib_old_book" }),
-  });
+  const gammaInv = await findAndInvestigateTarget(gammaPlayerId);
   const gammaChallenge = gammaInv.data?.data?.challenge;
   assert(!!gammaChallenge, `Gamma assigned challenge: ${gammaChallenge?.id}`);
 
@@ -318,10 +327,7 @@ async function runTests() {
   // ============================================================================
   console.log("\n--- FLEXIBLE NORMALIZATION CHECKS ---");
   const deltaPlayerId = await createPlayerWithSession("DeltaOp");
-  const deltaInv = await request("/game/investigate", {
-    method: "POST",
-    body: JSON.stringify({ playerId: deltaPlayerId, objectId: "lib_old_book" }),
-  });
+  const deltaInv = await findAndInvestigateTarget(deltaPlayerId);
   const deltaChallenge = deltaInv.data?.data?.challenge;
   const deltaQ = getQuestionById(deltaChallenge.id);
 

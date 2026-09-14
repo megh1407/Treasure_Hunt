@@ -94,13 +94,26 @@ function PlayerDashboardPage() {
                     key={`${row.playerName}-${idx}`}
                     className="flex items-center gap-3 rounded-lg border border-primary/20 bg-background/60 p-3.5 transition-all hover:border-primary/50"
                   >
-                    <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/15 font-display text-xs font-bold text-primary">
-                      {idx + 1}
+                    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/15 font-display text-xs font-bold text-primary">
+                      {row.rank ?? idx + 1}
                     </div>
-                    <div className="flex-1 truncate">
+                    <div className="flex-1 min-w-0 pr-2">
                       <p className="truncate font-display text-sm font-bold text-foreground">
                         {row.playerName}
                       </p>
+                      <p className="text-[11px] text-muted-foreground truncate">
+                        {row.levelsCompleted !== undefined
+                          ? `Levels Completed: ${row.levelsCompleted}/10`
+                          : row.status || "In Progress"}
+                      </p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <span className="text-[10px] uppercase tracking-wider text-muted-foreground block font-medium">
+                        Total Time
+                      </span>
+                      <span className="font-mono text-xs font-bold text-primary">
+                        {row.totalTime || "—"}
+                      </span>
                     </div>
                   </div>
                 ))}

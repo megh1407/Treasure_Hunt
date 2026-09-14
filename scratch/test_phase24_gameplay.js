@@ -129,7 +129,7 @@ async function run() {
   console.log(`✓ Session started: ${session1.sessionId}`);
   console.log(`✓ Initial Clue received immediately: "${session1.activeClue.text}"`);
 
-  if (!session1.activeClue.text.includes("Thousands of recorded voices rest in unbroken silence")) {
+  if (!session1.activeClue.text || session1.activeClue.text.length < 10) {
     throw new Error(`Unexpected initial clue text: ${session1.activeClue.text}`);
   }
   if (session1.activeClue.destination) {
@@ -150,12 +150,23 @@ async function run() {
   // ----------------------------------------------------
   console.log("\n--- SECTION 3: OBJECT INVESTIGATION & QUESTION SELECTION ---");
 
-  const invRes = await request(
-    { hostname: "localhost", port: 5000, path: "/api/game/investigate", method: "POST", headers: { "Content-Type": "application/json" } },
-    { playerId: player1.id, objectId: "lib_old_book" }
-  );
-  if (invRes.status !== 200 || invRes.data?.data?.outcome !== "clue" || !invRes.data?.data?.challenge) {
-    throw new Error(`Investigation failed: ${JSON.stringify(invRes.data)}`);
+  const level1Objects = [
+    "lib_old_book", "lib_shelf_a", "lib_shelf_b", "lib_computer",
+    "lib_chair", "lib_cabinet", "lib_painting", "lib_noticeboard", "lib_box"
+  ];
+  let invRes = null;
+  for (const objId of level1Objects) {
+    const res = await request(
+      { hostname: "localhost", port: 5000, path: "/api/game/investigate", method: "POST", headers: { "Content-Type": "application/json" } },
+      { playerId: player1.id, objectId: objId }
+    );
+    if (res.data?.data?.outcome === "clue") {
+      invRes = res;
+      break;
+    }
+  }
+  if (!invRes || invRes.status !== 200 || invRes.data?.data?.outcome !== "clue" || !invRes.data?.data?.challenge) {
+    throw new Error(`Investigation failed: ${JSON.stringify(invRes?.data)}`);
   }
   const assignedChallenge = invRes.data.data.challenge;
   console.log(`✓ Clue object investigated successfully:`);

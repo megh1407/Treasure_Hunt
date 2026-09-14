@@ -17,6 +17,8 @@ export interface LevelProgressData {
   usedHints: number[];
   attempts: number;
   assignedQuestionId?: string;
+  assignedClueLocationId?: string;
+  assignedClueSentenceId?: string;
   activeClue?: ActiveClueData;
   isSolved?: boolean;
   submittedAnswer?: string;
@@ -92,6 +94,14 @@ export function normalizeProgressData(raw: unknown): LevelProgressData {
 
   if (typeof obj["assignedQuestionId"] === "string" && obj["assignedQuestionId"].trim().length > 0) {
     result.assignedQuestionId = obj["assignedQuestionId"].trim();
+  }
+
+  if (typeof obj["assignedClueLocationId"] === "string" && obj["assignedClueLocationId"].trim().length > 0) {
+    result.assignedClueLocationId = obj["assignedClueLocationId"].trim();
+  }
+
+  if (typeof obj["assignedClueSentenceId"] === "string" && obj["assignedClueSentenceId"].trim().length > 0) {
+    result.assignedClueSentenceId = obj["assignedClueSentenceId"].trim();
   }
 
   if (obj["activeClue"] && typeof obj["activeClue"] === "object") {

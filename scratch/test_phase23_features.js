@@ -187,20 +187,31 @@ async function run() {
   // ----------------------------------------------------
   console.log("\n--- SECTION 2: SEQUENTIAL HINTS & IDEMPOTENCY ---");
 
-  // Player investigates level 1 target book to open challenge
-  console.log("\n[2.1] Investigating Level 1 target object (lib_old_book)...");
-  const invTarget = await request(
-    {
-      hostname: "localhost",
-      port: 5000,
-      path: "/api/game/investigate",
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-    },
-    { playerId, objectId: "lib_old_book" }
-  );
-  if (invTarget.status !== 200 || invTarget.data.data?.outcome !== "clue") {
-    throw new Error(`[2.1 Failed] Target investigation failed: ${JSON.stringify(invTarget.data)}`);
+  // Player investigates level 1 assigned target object to open challenge
+  console.log("\n[2.1] Investigating Level 1 assigned target object...");
+  const level1Objects = [
+    "lib_old_book", "lib_shelf_a", "lib_shelf_b", "lib_computer",
+    "lib_chair", "lib_cabinet", "lib_painting", "lib_noticeboard", "lib_box"
+  ];
+  let invTarget = null;
+  for (const objId of level1Objects) {
+    const res = await request(
+      {
+        hostname: "localhost",
+        port: 5000,
+        path: "/api/game/investigate",
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      },
+      { playerId, objectId: objId }
+    );
+    if (res.data?.data?.outcome === "clue") {
+      invTarget = res;
+      break;
+    }
+  }
+  if (!invTarget || invTarget.status !== 200 || invTarget.data.data?.outcome !== "clue") {
+    throw new Error(`[2.1 Failed] Target investigation failed: ${JSON.stringify(invTarget?.data)}`);
   }
   const ch1Id = invTarget.data.data.challenge.id;
   console.log(`✓ [2.1 Passed] Challenge unlocked: ${ch1Id}`);
@@ -357,12 +368,19 @@ async function run() {
   console.log(`Player 2 registered: ${p2Id}. Starting session...`);
   await request({ hostname: "localhost", port: 5000, path: "/api/sessions/start", method: "POST", headers: { "Content-Type": "application/json" } }, { playerId: p2Id });
   console.log("Session started. Investigating object to unlock challenge...");
-  await request({ hostname: "localhost", port: 5000, path: "/api/game/investigate", method: "POST", headers: { "Content-Type": "application/json" } }, { playerId: p2Id, objectId: "lib_old_book" });
-  console.log("Firing 2 simultaneous Hint 2 requests...");
+  let p2ChallengeId = "ch-1";
+  for (const objId of level1Objects) {
+    const res = await request({ hostname: "localhost", port: 5000, path: "/api/game/investigate", method: "POST", headers: { "Content-Type": "application/json" } }, { playerId: p2Id, objectId: objId });
+    if (res.data?.data?.outcome === "clue") {
+      p2ChallengeId = res.data.data.challenge.id;
+      break;
+    }
+  }
+  console.log(`Firing 2 simultaneous Hint 2 requests for challenge ${p2ChallengeId}...`);
 
   const [race1, race2] = await Promise.all([
-    request({ hostname: "localhost", port: 5000, path: "/api/game/hint", method: "POST", headers: { "Content-Type": "application/json" } }, { playerId: p2Id, challengeId: "ch-1", order: 2 }),
-    request({ hostname: "localhost", port: 5000, path: "/api/game/hint", method: "POST", headers: { "Content-Type": "application/json" } }, { playerId: p2Id, challengeId: "ch-1", order: 2 }),
+    request({ hostname: "localhost", port: 5000, path: "/api/game/hint", method: "POST", headers: { "Content-Type": "application/json" } }, { playerId: p2Id, challengeId: p2ChallengeId, order: 2 }),
+    request({ hostname: "localhost", port: 5000, path: "/api/game/hint", method: "POST", headers: { "Content-Type": "application/json" } }, { playerId: p2Id, challengeId: p2ChallengeId, order: 2 }),
   ]);
   console.log(`Race results: request 1 = ${race1.status}, request 2 = ${race2.status}`);
   if (race1.status !== 400 || race2.status !== 400) {

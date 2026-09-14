@@ -279,18 +279,15 @@ function AdminPage() {
             sub="Level 10 completed"
           />
           <Kpi
-            label="Average Total Time"
+            label="Total Time"
             value={
-              leaderboard.length > 0
-                ? formatTime(
-                    Math.round(
-                      leaderboard.reduce((a, p) => a + p.finalTimeSeconds, 0) /
-                        leaderboard.length,
-                    ),
-                  )
+              stats?.totalTimeSeconds !== undefined && stats.totalTimeSeconds > 0
+                ? formatTime(stats.totalTimeSeconds)
+                : leaderboard.length > 0
+                ? formatTime(leaderboard.reduce((a, p) => a + (p.finalTimeSeconds || 0), 0))
                 : "—"
             }
-            sub="Active player speed"
+            sub="Cumulative mission time"
           />
         </div>
 
@@ -366,15 +363,16 @@ function AdminPage() {
                   <th className="px-3 py-3 font-semibold">Contact / Email</th>
                   <th className="px-3 py-3 font-semibold">Branch</th>
                   <th className="px-3 py-3 font-semibold">Progress</th>
-                  <th className="px-3 py-3 font-semibold">Time</th>
-                  <th className="px-3 py-3 font-semibold">Penalty</th>
+                  <th className="px-3 py-3 font-semibold">Game Time</th>
+                  <th className="px-3 py-3 font-semibold">Penalty Time</th>
+                  <th className="px-3 py-3 font-semibold">Total Time</th>
                   <th className="px-3 py-3 font-semibold text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y border-border/40">
                 {filteredLeaderboard.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-3 py-8 text-center text-muted-foreground">
+                    <td colSpan={10} className="px-3 py-8 text-center text-muted-foreground">
                       {isLoadingData
                         ? "Loading contestant data..."
                         : searchQuery.trim()
@@ -426,11 +424,14 @@ function AdminPage() {
                             )}
                           </div>
                         </td>
-                        <td className="px-3 py-3 font-display font-mono text-foreground">
-                          {formatTime(player.finalTimeSeconds)}
+                        <td className="px-3 py-3 font-mono text-muted-foreground">
+                          {formatTime(player.gameTimeSeconds ?? 0)}
                         </td>
                         <td className="px-3 py-3 font-mono text-destructive">
                           {player.penaltySeconds > 0 ? `+${player.penaltySeconds}s` : "0s"}
+                        </td>
+                        <td className="px-3 py-3 font-display font-mono text-foreground font-semibold">
+                          {formatTime(player.finalTimeSeconds ?? 0)}
                         </td>
                         <td className="px-3 py-3 text-right">
                           <button

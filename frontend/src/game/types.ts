@@ -236,6 +236,7 @@ export interface LeaderboardRow {
   timeSeconds: number;
   penaltySeconds: number;
   finalTimeSeconds: number;
+  totalTime?: string | undefined;
   location: string;
   status: PlayerStatus;
 }
