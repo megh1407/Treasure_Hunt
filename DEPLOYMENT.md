@@ -70,7 +70,7 @@ Render hosts the backend Node.js Express service. You can deploy either using th
 2. Connect your Git repository.
 3. Render reads `render.yaml` automatically, configuring:
    - **Root Directory**: `backend`
-   - **Build Command**: `npm ci && npm run prisma:generate && npm run build`
+  - **Build Command**: `npm ci --include=dev && npm run prisma:generate && npm run build`
    - **Start Command**: `npm start`
    - **Health Check Path**: `/api/health`
 4. Under the Environment Variables section in Render, input your secret values for:
@@ -86,7 +86,7 @@ Render hosts the backend Node.js Express service. You can deploy either using th
    - **Name**: `core-quest-finder-backend`
    - **Language**: `Node`
    - **Root Directory**: `backend`
-   - **Build Command**: `npm ci && npm run prisma:generate && npm run build`
+  - **Build Command**: `npm ci --include=dev && npm run prisma:generate && npm run build`
    - **Start Command**: `npm start`
    - **Health Check Path**: `/api/health`
 4. In **Environment Variables**, add:
