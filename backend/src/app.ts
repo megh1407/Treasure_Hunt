@@ -7,16 +7,45 @@ import { errorHandler, notFoundHandler } from "./middleware/errorHandler";
 
 export const app = express();
 
-// Enable CORS for frontend clients
+// Trust reverse proxy headers when running on Render or behind cloud load balancers
+app.set("trust proxy", 1);
+
+// Apply baseline API security headers. Vercel applies the frontend CSP separately.
+app.use((_req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  res.setHeader("Cache-Control", "no-store");
+  if (env.NODE_ENV === "production") {
+    res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload");
+  }
+  next();
+});
+
+// Enable CORS for frontend clients with strict origin validation
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow requests with no origin (e.g. mobile apps, curl, Postman)
+      // Allow requests with no origin (e.g. mobile apps, curl, Postman, health probes)
       if (!origin) return callback(null, true);
-      if (env.CORS_ORIGINS.includes(origin) || env.NODE_ENV === "development") {
+      const normalizedOrigin = origin.replace(/\/+$/, "");
+
+      if (env.CORS_ORIGINS.includes(normalizedOrigin)) {
         return callback(null, true);
       }
-      return callback(new Error(`Origin ${origin} not allowed by CORS`));
+
+      // Preserve local development origins
+      if (
+        env.NODE_ENV === "development" &&
+        (origin.includes("localhost") || origin.includes("127.0.0.1") || origin.startsWith("http://10."))
+      ) {
+        return callback(null, true);
+      }
+
+      const err = new Error(`Origin ${origin} not allowed by CORS`);
+      (err as any).status = 403;
+      return callback(err);
     },
     credentials: true,
   })
