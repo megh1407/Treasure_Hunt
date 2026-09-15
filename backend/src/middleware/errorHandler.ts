@@ -25,8 +25,12 @@ export function errorHandler(
   let statusCode = err.status || (err.name === "ValidationError" ? 400 : 500);
   let errorMessage = err.message || "An unexpected internal server error occurred";
 
-  // Handle known Prisma database errors gracefully
-  if (err.code === "P2002") {
+  // Handle CORS rejections with 403 Forbidden
+  if (err.message && err.message.includes("CORS")) {
+    statusCode = 403;
+    errorMessage = "Origin not allowed by CORS policy";
+  } else if (err.code === "P2002") {
+    // Handle known Prisma database errors gracefully
     statusCode = 409;
     errorMessage = "A record with this unique value already exists";
   } else if (err.code === "P2024") {
@@ -35,6 +39,9 @@ export function errorHandler(
   } else if (err.code === "P2028") {
     statusCode = 503;
     errorMessage = "Database transaction timed out, please retry";
+  } else if (typeof err.code === "string" && err.code.startsWith("P1")) {
+    statusCode = 503;
+    errorMessage = "Database service is temporarily unavailable. Please retry shortly.";
   } else if (statusCode === 500 && env.NODE_ENV === "production") {
     // Avoid leaking internal SQL/stack traces to external clients in production
     errorMessage = "An internal server error occurred. Please try again later.";

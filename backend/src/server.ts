@@ -9,13 +9,17 @@ async function bootstrap() {
   // Connect and test PostgreSQL connection via Prisma (non-blocking)
   await connectDatabase();
 
-  const server = app.listen(env.PORT, () => {
+  const host = env.HOST;
+  const port = env.PORT;
+
+  const server = app.listen(port, host, () => {
     console.log(`====================================================`);
     console.log(` Core Quest Finder Backend Server (PostgreSQL)      `);
     console.log(`====================================================`);
     console.log(` Environment : ${env.NODE_ENV}`);
-    console.log(` Port        : ${env.PORT}`);
-    console.log(` Health check: http://localhost:${env.PORT}/api/health`);
+    console.log(` Host        : ${host}`);
+    console.log(` Port        : ${port}`);
+    console.log(` Health check: http://${host === "0.0.0.0" ? "localhost" : host}:${port}/health`);
     console.log(` CORS origins: ${env.CORS_ORIGINS.join(", ")}`);
     console.log(`====================================================`);
   });

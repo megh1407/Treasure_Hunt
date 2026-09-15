@@ -116,16 +116,21 @@ export function GameWorld({ onNearby }: { onNearby: (t: ProximityTarget | null) 
 
   const targets = useMemo<ProximityTarget[]>(() => {
     if (config.isInterior) {
-      // Interior: level objects (investigate) + exit trigger (navigate back)
+      // Interior: level objects (investigate target vs scan object) + exit trigger (navigate back)
+      const isQuestRoom = config.levelId != null && config.levelId === currentLevel;
       const levelObjects: ProximityTarget[] =
         config.levelId != null
-          ? getLevel(config.levelId).objects.map((o) => ({
-              id: o.id,
-              label: investigated.includes(o.id) ? `${o.label} (searched)` : o.label,
-              position: o.position,
-              radius: o.radius,
-              action: "Investigate" as const,
-            }))
+          ? getLevel(config.levelId).objects.map((o) => {
+              const isSearched = investigated.includes(o.id);
+              const action = isQuestRoom && !isSearched ? "Investigate Target" : "Scan Object";
+              return {
+                id: o.id,
+                label: isSearched ? `${o.label} (searched)` : o.label,
+                position: o.position,
+                radius: o.radius,
+                action,
+              };
+            })
           : [];
 
       const exitTarget: ProximityTarget[] =
@@ -160,7 +165,7 @@ export function GameWorld({ onNearby }: { onNearby: (t: ProximityTarget | null) 
         navigatesTo: targetScene?.id,
       };
     });
-  }, [config, investigated]);
+  }, [config, investigated, currentLevel]);
 
   // ── Collision blockers ──────────────────────────────────────────────────
 
@@ -185,6 +190,7 @@ export function GameWorld({ onNearby }: { onNearby: (t: ProximityTarget | null) 
   useEffect(() => {
     onNearby(null);
     setHighlightedId(null);
+    useGameStore.getState().clearInvestigationState();
   }, [scene, onNearby]);
 
   // ── Render ──────────────────────────────────────────────────────────────
@@ -247,6 +253,17 @@ export function GameWorld({ onNearby }: { onNearby: (t: ProximityTarget | null) 
         positionRef={positionRef}
         onChange={(t) => {
           setHighlightedId(t ? t.id : null);
+          if (t && !t.navigatesTo) {
+            useGameStore.getState().setSelectedObject({
+              id: t.id,
+              name: t.label.replace(" (searched)", ""),
+              levelId: config.levelId,
+              room: config.room,
+              action: (t.action as "Scan Object" | "Investigate Target") || "Scan Object",
+            });
+          } else if (!t) {
+            useGameStore.getState().setSelectedObject(null);
+          }
           onNearby(t);
         }}
       />

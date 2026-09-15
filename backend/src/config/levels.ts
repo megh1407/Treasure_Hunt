@@ -167,3 +167,56 @@ export function getDecoyInLevel(levelId: number, objectId: string): DecoyObjectC
   }
   return undefined;
 }
+
+export interface ResolvedGameObject {
+  id: string;
+  levelId: number;
+  label: string;
+  isTarget: boolean;
+  decoyMessage?: string;
+}
+
+/**
+ * Searches across all 10 authoritative server level configs and clue pools to locate
+ * any valid in-game object by its ID. Returns null if unknown.
+ */
+export function findObjectAcrossAllLevels(objectId: string): ResolvedGameObject | null {
+  for (let lvl = 1; lvl <= 10; lvl++) {
+    const config = getServerLevelConfig(lvl);
+    if (!config) continue;
+
+    if (config.targetObjectId === objectId) {
+      return {
+        id: objectId,
+        levelId: lvl,
+        label: config.targetObjectDisplayName || "Target Artifact",
+        isTarget: true,
+      };
+    }
+
+    const decoy = config.decoys?.find((d) => d.id === objectId);
+    if (decoy) {
+      return {
+        id: objectId,
+        levelId: lvl,
+        label: decoy.label || objectId,
+        isTarget: false,
+        decoyMessage: decoy.message,
+      };
+    }
+
+    const clueLocations = getLocationsForLevel(lvl);
+    const loc = clueLocations.find((l) => l.objectId === objectId);
+    if (loc) {
+      return {
+        id: objectId,
+        levelId: lvl,
+        label: loc.label,
+        isTarget: Boolean(loc.isCanonicalTarget),
+      };
+    }
+  }
+
+  return null;
+}
+

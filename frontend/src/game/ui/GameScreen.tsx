@@ -115,7 +115,8 @@ export function GameScreen() {
           }, 40);
         } else {
           if (!store.isReady || !store.activeSessionId) return;
-          void investigate(target.id);
+          const targetId = store.selectedObject?.id ?? target.id;
+          void investigate(targetId);
         }
       }
     };

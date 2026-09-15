@@ -153,8 +153,15 @@ export class HttpGameApi implements GameApi {
   private activeSessionId: string | null = null;
 
   constructor(baseUrl?: string) {
-    const rawUrl = baseUrl || import.meta.env["VITE_API_URL"] || "http://localhost:5000/api";
-    this.baseUrl = rawUrl.replace(/\/+$/, "");
+    const rawUrl =
+      baseUrl ||
+      import.meta.env["VITE_API_URL"] ||
+      (import.meta.env.DEV ? "http://localhost:5000/api" : "/api");
+    let normalized = rawUrl.trim().replace(/\/+$/, "");
+    if (!normalized.endsWith("/api")) {
+      normalized = `${normalized}/api`;
+    }
+    this.baseUrl = normalized;
   }
 
   /**
@@ -162,7 +169,12 @@ export class HttpGameApi implements GameApi {
    * Extracts backend error messages and avoids exposing raw fetch implementation details.
    */
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-    const url = `${this.baseUrl}${endpoint.startsWith("/") ? endpoint : `/${endpoint}`}`;
+    const cleanEndpoint = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
+    const finalEndpoint =
+      this.baseUrl.endsWith("/api") && cleanEndpoint.startsWith("/api/")
+        ? cleanEndpoint.slice(4)
+        : cleanEndpoint;
+    const url = `${this.baseUrl}${finalEndpoint}`;
 
     let response: Response;
     try {
@@ -173,6 +185,7 @@ export class HttpGameApi implements GameApi {
 
       const effectiveSignal = options.signal || timeoutSignal;
       const fetchOptions: RequestInit = {
+        credentials: options.credentials || "include",
         ...options,
         headers: {
           "Content-Type": "application/json",
@@ -762,6 +775,7 @@ export class HttpGameApi implements GameApi {
   async downloadAdminExcel(token: string): Promise<void> {
     const res = await fetch(`${this.baseUrl}/admin/export/excel`, {
       method: "GET",
+      credentials: "include",
       headers: {
         Authorization: `Bearer ${token}`,
       },

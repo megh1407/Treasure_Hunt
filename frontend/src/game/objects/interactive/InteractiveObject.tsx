@@ -21,6 +21,7 @@ export interface InteractiveObjectProps {
  */
 export function InteractiveObject({ object, highlighted, children }: InteractiveObjectProps) {
   const isInvestigating = useGameStore((s) => s.investigatingId === object.id);
+  const isSelected = useGameStore((s) => s.selectedObject?.id === object.id);
   const ringRef = useRef<THREE.Mesh>(null);
   const scanRef = useRef<THREE.Mesh>(null);
 
@@ -45,6 +46,19 @@ export function InteractiveObject({ object, highlighted, children }: Interactive
     const store = useGameStore.getState();
     if (!store.isReady || !store.activeSessionId || store.investigatingId || store.panel) return;
 
+    const isQuestRoom = object.levelId === store.currentLevel;
+    const isSearched = store.investigated.includes(object.id);
+    const action = isQuestRoom && !isSearched ? "Investigate Target" : "Scan Object";
+
+    // Synchronize selectedObject state immediately on 3D click
+    store.setSelectedObject({
+      id: object.id,
+      name: object.label || object.id.replace(/_/g, " "),
+      levelId: object.levelId,
+      room: object.room,
+      action,
+    });
+
     // Verify player is within reasonable interaction distance
     const [px, , pz] = store.playerPosition;
     const [ox, , oz] = object.position;
@@ -58,8 +72,8 @@ export function InteractiveObject({ object, highlighted, children }: Interactive
     void store.investigate(object.id);
   };
 
-  const showHighlight = highlighted || isInvestigating;
-  const ringColor = isInvestigating ? "#fbbf24" : "#7fe3f2";
+  const showHighlight = highlighted || isInvestigating || isSelected;
+  const ringColor = isInvestigating ? "#fbbf24" : isSelected ? "#38bdf8" : "#7fe3f2";
 
   return (
     <group

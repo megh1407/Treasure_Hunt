@@ -15,6 +15,11 @@ import type {
   AdminLeaderboardEntryDTO,
 } from "../types";
 
+// In-memory failed login tracking for brute-force prevention
+const failedLoginAttempts = new Map<string, { count: number; lockedUntil: number }>();
+const MAX_FAILED_ATTEMPTS = 10;
+const LOCKOUT_DURATION_MS = env.NODE_ENV === "production" ? 5 * 60 * 1000 : 2000;
+
 /**
  * Verifies admin password and issues an authoritative admin session token.
  * POST /api/admin/login
@@ -25,6 +30,19 @@ export async function adminLogin(
   next: NextFunction
 ) {
   try {
+    const clientIp = (req.ip || req.socket.remoteAddress || "unknown").toString();
+    const now = Date.now();
+    const attemptRecord = failedLoginAttempts.get(clientIp);
+
+    if (attemptRecord && attemptRecord.lockedUntil > now) {
+      const waitSeconds = Math.ceil((attemptRecord.lockedUntil - now) / 1000);
+      res.status(429).json({
+        success: false,
+        error: `Too many failed login attempts. Please try again in ${waitSeconds} seconds.`,
+      });
+      return;
+    }
+
     const { password } = req.body;
     if (!password || typeof password !== "string") {
       res.status(400).json({
@@ -44,12 +62,20 @@ export async function adminLogin(
       crypto.timingSafeEqual(bufferA, bufferB);
 
     if (!isMatch) {
+      const isExpired = attemptRecord && attemptRecord.lockedUntil > 0 && attemptRecord.lockedUntil <= now;
+      const currentCount = isExpired ? 1 : (attemptRecord?.count || 0) + 1;
+      const lockedUntil = currentCount >= MAX_FAILED_ATTEMPTS ? now + LOCKOUT_DURATION_MS : 0;
+      failedLoginAttempts.set(clientIp, { count: currentCount, lockedUntil });
+
       res.status(401).json({
         success: false,
         error: "Invalid administrative password",
       });
       return;
     }
+
+    // Clear failed attempts on successful authentication
+    failedLoginAttempts.delete(clientIp);
 
     const token = crypto.randomBytes(32).toString("hex");
     activeAdminTokens.set(token, { createdAt: Date.now() });

@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import { prisma } from "../lib/prisma";
-import { getServerLevelConfig, isObjectInLevel, getDecoyInLevel } from "../config/levels";
+import { getServerLevelConfig, isObjectInLevel, getDecoyInLevel, findObjectAcrossAllLevels } from "../config/levels";
 import { normalizeProgressData } from "../lib/progress";
 import { getQuestionById, selectQuestionForPlayer, isAnswerCorrect } from "../config/questionBank";
 import { getNextClueForCompletedLevel, getDefaultClueForLevel, selectClueForPlayer, repairOrValidateClue } from "../config/clueBank";
@@ -125,12 +125,16 @@ export async function investigateObject(
 
     // 6. Verify object belongs to the player's current level
     if (!isObjectInLevel(currentLevel, trimmedObjectId)) {
+      const globalObj = findObjectAcrossAllLevels(trimmedObjectId);
+      const scanMessage = globalObj
+        ? `SCAN RESULT: The ${globalObj.label} does not appear relevant to your current investigation. Continue searching for evidence connected to your current quest.`
+        : "SCAN RESULT: This object does not appear relevant to your current investigation. Continue searching for evidence connected to your current quest.";
+
       res.status(200).json({
         success: true,
         data: {
           outcome: "cross_level",
-          message:
-            "SCAN RESULT: This object does not appear relevant to your current investigation. Continue searching for evidence connected to your current quest.",
+          message: scanMessage,
         },
       });
       return;

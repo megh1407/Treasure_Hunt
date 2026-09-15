@@ -27,6 +27,8 @@ export const VALID_BRANCHES = [
   "Mech",
   "Chemical",
   "MCA",
+  "AI",
+  "Others",
 ] as const;
 
 export type Branch = (typeof VALID_BRANCHES)[number];

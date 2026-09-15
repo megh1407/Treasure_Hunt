@@ -36,6 +36,14 @@ export type PanelId =
 export const STORAGE_KEY_PLAYER_ID = "core_quest_player_id";
 export const STORAGE_KEY_ACTIVE_SCENE = "core_quest_active_scene";
 
+export interface SelectedObjectInfo {
+  id: string;
+  name: string;
+  levelId: number | null;
+  room: string | null;
+  action: "Scan Object" | "Investigate Target";
+}
+
 interface GameState {
   player: Player | null;
   activeSessionId: string | null;
@@ -73,6 +81,7 @@ interface GameState {
   scannerResult: string | null;
   playerPosition: [number, number, number];
   investigatingId: string | null;
+  selectedObject: SelectedObjectInfo | null;
   spawnOverride: [number, number, number] | null;
   levelCompleted: boolean;
   missionCompleted: boolean;
@@ -83,6 +92,8 @@ interface GameState {
   startGame: () => Promise<void>;
   tick: () => void;
   setScene: (scene: SceneId) => void;
+  setSelectedObject: (obj: SelectedObjectInfo | null) => void;
+  clearInvestigationState: () => void;
   setCameraMode: (mode: CameraMode) => void;
   toggleCamera: () => void;
   setPanel: (panel: PanelId) => void;
@@ -140,6 +151,7 @@ const initial = {
   scannerResult: null,
   playerPosition: [0, 0, 42] as [number, number, number],
   investigatingId: null as string | null,
+  selectedObject: null as SelectedObjectInfo | null,
   spawnOverride: null as [number, number, number] | null,
   levelCompleted: false,
   missionCompleted: false,
@@ -147,6 +159,7 @@ const initial = {
 };
 
 let initializationPromise: Promise<void> | null = null;
+let investigationSequence = 0;
 
 function log(state: GameState, type: Parameters<typeof realtime.emit>[0]["type"], message: string) {
   realtime.emit({
@@ -162,7 +175,9 @@ function isSessionSyncError(error: unknown) {
   return (
     message.includes("no active game session") ||
     (message.includes("session with id") &&
-      (message.includes("not found") || message.includes("inactive") || message.includes("does not belong")))
+      (message.includes("not found") ||
+        message.includes("inactive") ||
+        message.includes("does not belong")))
   );
 }
 
@@ -181,7 +196,11 @@ export const useGameStore = create<GameState>((set, get) => ({
     // 1. If already initialized and ready with valid session, return immediately
     const state = get();
     if (
-      (state.isReady && state.player && state.activeSessionId && state.startedAt && state.status !== "completed") ||
+      (state.isReady &&
+        state.player &&
+        state.activeSessionId &&
+        state.startedAt &&
+        state.status !== "completed") ||
       (state.status === "completed" && state.hasHydrated && state.player)
     ) {
       return;
@@ -198,7 +217,8 @@ export const useGameStore = create<GameState>((set, get) => ({
       try {
         let storedId: string | null = null;
         try {
-          storedId = typeof window !== "undefined" ? localStorage.getItem(STORAGE_KEY_PLAYER_ID) : null;
+          storedId =
+            typeof window !== "undefined" ? localStorage.getItem(STORAGE_KEY_PLAYER_ID) : null;
         } catch {}
 
         // Check if player is already set in memory (e.g. from register call)
@@ -227,11 +247,14 @@ export const useGameStore = create<GameState>((set, get) => ({
           const lvl = getLevel(player.currentLevel);
 
           let activeSessionId = !isCompleted && activeSession?.isActive ? activeSession.id : null;
-          let sessionStartTime = !isCompleted && activeSession?.isActive ? (activeSession.startTime ?? null) : null;
+          let sessionStartTime =
+            !isCompleted && activeSession?.isActive ? (activeSession.startTime ?? null) : null;
           let isPaused = Boolean(!isCompleted && activeSession?.isActive && activeSession.isPaused);
           let pausedAt = isPaused ? (activeSession?.pausedAt ?? null) : null;
           let totalPausedSeconds =
-            !isCompleted && activeSession?.totalPausedSeconds ? activeSession.totalPausedSeconds : 0;
+            !isCompleted && activeSession?.totalPausedSeconds
+              ? activeSession.totalPausedSeconds
+              : 0;
 
           // CRITICAL: If player exists BUT has no active session (and not completed), start a valid session now!
           let initialClueFromStart: Clue | undefined = undefined;
@@ -257,26 +280,35 @@ export const useGameStore = create<GameState>((set, get) => ({
               pausedAt = null;
               totalPausedSeconds = 0;
             } catch (startErr) {
-              console.error("[GameStore] Failed to auto-start session for existing player:", startErr);
+              console.error(
+                "[GameStore] Failed to auto-start session for existing player:",
+                startErr,
+              );
               throw startErr;
             }
           }
 
-          const startedAt = sessionStartTime ?? (player.startTime ?? Date.now());
+          const startedAt = sessionStartTime ?? player.startTime ?? Date.now();
 
           let elapsedSeconds = player.gameTimeSeconds;
           if (startedAt && !isCompleted && activeSessionId) {
             if (isPaused) {
               const pauseTime = pausedAt ?? Date.now();
-              elapsedSeconds = Math.max(0, Math.floor((pauseTime - startedAt) / 1000) - totalPausedSeconds);
+              elapsedSeconds = Math.max(
+                0,
+                Math.floor((pauseTime - startedAt) / 1000) - totalPausedSeconds,
+              );
             } else {
-              elapsedSeconds = Math.max(0, Math.floor((Date.now() - startedAt) / 1000) - totalPausedSeconds);
+              elapsedSeconds = Math.max(
+                0,
+                Math.floor((Date.now() - startedAt) / 1000) - totalPausedSeconds,
+              );
             }
           }
 
           const investigated = levelProgress?.investigatedObjects ?? [];
           const inventory = (
-            (player.inventory && player.inventory.length > 0)
+            player.inventory && player.inventory.length > 0
               ? player.inventory
               : (levelProgress?.collectedItems ?? [])
           ) as InventoryItemId[];
@@ -309,7 +341,8 @@ export const useGameStore = create<GameState>((set, get) => ({
               }
             } else {
               // Active searching state: The server-authoritative clue for this level MUST be displayed by default!
-              const serverClue = recovered.activeClue || levelProgress?.activeClue || initialClueFromStart;
+              const serverClue =
+                recovered.activeClue || levelProgress?.activeClue || initialClueFromStart;
               if (serverClue) {
                 discoveredClue = {
                   id: serverClue.id,
@@ -379,14 +412,16 @@ export const useGameStore = create<GameState>((set, get) => ({
 
           let storedScene: SceneId | null = null;
           try {
-            storedScene = typeof window !== "undefined"
-              ? (localStorage.getItem(STORAGE_KEY_ACTIVE_SCENE) as SceneId | null)
-              : null;
+            storedScene =
+              typeof window !== "undefined"
+                ? (localStorage.getItem(STORAGE_KEY_ACTIVE_SCENE) as SceneId | null)
+                : null;
           } catch {}
 
           // Determine scene safely: do NOT assume interior just because currentLevel > 1.
           // Player enters interior only when they actually investigate objects or are solving.
-          const prevLevelScene = player.currentLevel > 1 ? getSceneForLevel(player.currentLevel - 1) : null;
+          const prevLevelScene =
+            player.currentLevel > 1 ? getSceneForLevel(player.currentLevel - 1) : null;
           let scene: SceneId = "campus";
           let isAtPrevCompletedRoom = false;
 
@@ -458,7 +493,8 @@ export const useGameStore = create<GameState>((set, get) => ({
           while (!player && attempts < 3) {
             attempts++;
             const randSuffix = Math.floor(1000 + Math.random() * 9000);
-            const uniqueGuestEnrollment = `GST${Date.now().toString().slice(-4)}${randSuffix}`.slice(0, 11);
+            const uniqueGuestEnrollment =
+              `GST${Date.now().toString().slice(-4)}${randSuffix}`.slice(0, 11);
             try {
               player = await api.registerPlayer({
                 playerName: "Guest Operative",
@@ -470,7 +506,8 @@ export const useGameStore = create<GameState>((set, get) => ({
               });
             } catch (regErr) {
               lastRegError = regErr;
-              if (attempts >= 3) throw lastRegError || new Error("Registration failed after 3 attempts");
+              if (attempts >= 3)
+                throw lastRegError || new Error("Registration failed after 3 attempts");
             }
           }
         }
@@ -554,7 +591,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     if (!startedAt || status === "completed" || isPaused || pausedAt) return;
     const currentElapsed = Math.max(
       0,
-      Math.floor((Date.now() - startedAt) / 1000) - totalPausedSeconds
+      Math.floor((Date.now() - startedAt) / 1000) - totalPausedSeconds,
     );
     set({ elapsedSeconds: currentElapsed });
   },
@@ -565,6 +602,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       set({ isTransitioningScene: false });
       return;
     }
+    get().clearInvestigationState();
     const prevCfg = getSceneConfig(prevScene);
     const cfg = getSceneConfig(scene);
     let spawnOverride: [number, number, number] | null = null;
@@ -586,6 +624,18 @@ export const useGameStore = create<GameState>((set, get) => ({
     if (cfg.enterLogMessage) log(get(), "room_entered", cfg.enterLogMessage);
   },
 
+  setSelectedObject: (selectedObject) => set({ selectedObject }),
+
+  clearInvestigationState: () => {
+    investigationSequence++;
+    set({
+      selectedObject: null,
+      lastInteraction: null,
+      toast: null,
+      investigatingId: null,
+    });
+  },
+
   setIsTransitioningScene: (isTransitioningScene) => set({ isTransitioningScene }),
 
   setCameraMode: (cameraMode) => set({ cameraMode }),
@@ -598,6 +648,8 @@ export const useGameStore = create<GameState>((set, get) => ({
     const state = get();
     // Authoritative session and readiness guards
     if (!state.isReady || !state.activeSessionId || state.panel || state.investigatingId) return;
+
+    const currentSeq = ++investigationSequence;
     // Immediate feedback acknowledgment before awaiting network/API
     set({
       investigatingId: objectId,
@@ -615,9 +667,12 @@ export const useGameStore = create<GameState>((set, get) => ({
         result = await api.investigateObject(playerId, objectId);
       }
 
+      // If another investigation or scene switch occurred, discard stale result
+      if (currentSeq !== investigationSequence) return;
+
       // CROSS-LEVEL OBJECT: Show immersive message ONLY. Zero state mutation.
       if (result.outcome === "cross_level") {
-        set({ toast: result.message });
+        set({ toast: result.message, lastInteraction: result });
         return;
       }
 
@@ -648,10 +703,14 @@ export const useGameStore = create<GameState>((set, get) => ({
       set({ investigated, lastInteraction: result, toast: result.message });
       log(get(), "object_investigated", `investigated ${objectId}`);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to investigate object";
-      set({ toast: msg });
+      if (currentSeq === investigationSequence) {
+        const msg = err instanceof Error ? err.message : "Failed to investigate object";
+        set({ toast: msg });
+      }
     } finally {
-      set({ investigatingId: null });
+      if (currentSeq === investigationSequence) {
+        set({ investigatingId: null });
+      }
     }
   },
 
@@ -679,14 +738,13 @@ export const useGameStore = create<GameState>((set, get) => ({
         void api.completeSession(state.player.id, state.activeSessionId ?? undefined);
       }
       const isAdvancing = nextLevel !== null && nextLevel !== state.currentLevel;
-      const newlyRevealedClue =
-        res.nextClue
-          ? { ...res.nextClue, destination: "" }
-          : state.pendingClue
+      const newlyRevealedClue = res.nextClue
+        ? { ...res.nextClue, destination: "" }
+        : state.pendingClue
           ? { ...state.pendingClue, destination: "" }
           : state.discoveredClue
-          ? { ...state.discoveredClue, destination: "" }
-          : { ...getLevel(state.currentLevel).clue, destination: "" };
+            ? { ...state.discoveredClue, destination: "" }
+            : { ...getLevel(state.currentLevel).clue, destination: "" };
 
       // Preserve player in their current scene/location so they can exit naturally to campus
       set({
@@ -765,7 +823,8 @@ export const useGameStore = create<GameState>((set, get) => ({
       });
       log(get(), "scanner_used", `used the AR scanner (+${res.penaltySeconds}s)`);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Scanner failed to connect to satellite network";
+      const msg =
+        err instanceof Error ? err.message : "Scanner failed to connect to satellite network";
       set({ scannerResult: msg });
     } finally {
       set({ scannerBusy: false });
